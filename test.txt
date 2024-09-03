@@ -1,0 +1,356 @@
+const express = require('express');
+const bodyParser = require('body-parser');
+const { Pool } = require('pg');
+const moment = require('moment');
+
+const app = express();
+const port = 3000;
+
+app.use(bodyParser.json());
+
+// Connect to the PostgreSQL database
+const pool = new Pool({
+    user: 'postgres',
+    host: 'localhost',
+    database: 'postgres',
+    password: '12345',
+    port: 5432,
+});
+
+// Endpoint to get ship by MMSI
+app.get('/api/ships/mmsi/:mmsi', async (req, res) => {
+    const { mmsi } = req.params;
+    try {
+        const result = await pool.query('SELECT * FROM "Ship_data"."ais_data" WHERE mmsi = $1', [mmsi]);
+        if (result.rows.length > 0) {
+            res.json(result.rows[0]);
+        } else {
+            res.status(404).send('Ship not found');
+        }
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Server Error');
+    }
+});
+
+app.get('/api/ships/', async (req, res) => {
+    const { page = 1, limit = 5 } = req.query;
+
+    try {
+        const offset = (page - 1) * limit;
+
+        const result = await pool.query(
+            `SELECT * FROM "Ship_data"."ais_data" ORDER BY mmsi LIMIT $1 OFFSET $2`,
+            [limit, offset]
+        );
+
+        const countResult = await pool.query(`SELECT COUNT(*) FROM "Ship_data"."ais_data"`);
+        const totalRows = parseInt(countResult.rows[0].count);
+
+        res.json({
+            data: result.rows,
+            meta: {
+                totalRows,
+                currentPage: parseInt(page),
+                totalPages: Math.ceil(totalRows / limit)
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ msg: "Problem in the fetch", error: err.message });
+    }
+});
+
+
+//Get the ship data using ISO and MMSI number
+app.get('/api/ships/:mmsi/:imo', async (req, res) => {
+    const { mmsi, imo } = req.params;
+
+    try {
+        // Fetch the filtered results from the database
+        const result = await pool.query(
+            `SELECT * FROM "Ship_data"."ais_data" WHERE mmsi = $1 AND imo = $2`,
+            [mmsi, imo]
+        );
+
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ msg: "Problem in the fetch", error: err.message });
+    }
+});
+
+
+
+// Endpoint to get ship by IMO
+app.get('/api/ships/imo/:imo', async (req, res) => {
+    const { imo } = req.params;
+    try {
+        const result = await pool.query('SELECT * FROM "Ship_data"."ais_data" WHERE imo = $1', [imo]);
+        if (result.rows.length > 0) {
+            res.json(result.rows[0]);
+        } else {
+            res.status(404).send('Ship not found');
+        }
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Server Error');
+    }
+});
+
+// Endpoint to get ship by name
+app.get('/api/ships/name/:name', async (req, res) => {
+    const { name } = req.params;
+    try {
+        const result = await pool.query('SELECT * FROM "Ship_data"."ais_data" WHERE name = $1', [name]);
+        if (result.rows.length > 0) {
+            res.json(result.rows[0]);
+        } else {
+            res.status(404).send('Ship not found');
+        }
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Server Error');
+    }
+});
+
+// Endpoint to get ship by call sign
+app.get('/api/ships/callSign/:callSign', async (req, res) => {
+    const { callSign } = req.params;
+    try {
+        const result = await pool.query('SELECT * FROM "Ship_data"."ais_data" WHERE callSign = $1', [callSign]);
+        if (result.rows.length > 0) {
+            res.json(result.rows[0]);
+        } else {
+            res.status(404).send('Ship not found');
+        }
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Server Error');
+    }
+});
+
+
+
+function convertToMillis(dateTime) {
+    return moment(dateTime).valueOf();
+}
+
+// Endpoint to fetch ships that match the time parameters
+app.get("/api/ships/time/:start_time/:end_time", async (req, res) => {
+    const { start_time, end_time } = req.params;
+    const startMillis = convertToMillis(start_time);
+    const endMillis = convertToMillis(end_time);
+
+    // try {
+    //     // Ensure the milliseconds are valid
+    //     if (isNaN(startMillis) || isNaN(endMillis)) {
+    //         return res.status(400).json({ error: "Invalid date format" });
+    //     }
+    
+      
+    //     const query = `
+    //         SELECT *
+    //         FROM "Ship_data"."ais_data"
+    //         WHERE start_time >= $1 AND end_time <= $2
+    //         AND start_time IS NOT NULL
+    //         AND end_time IS NOT NULL;
+    //     `;
+
+        
+    //     const result = await pool.query(query, [startMillis, endMillis]); 
+    //     res.json(result.rows);
+    // } catch (err) {
+    //     res.status(500).json({ error: err.message });
+    //     console.error('Error:', err.message);
+    // }
+    res.json({startMillis,endMillis});
+
+});
+
+//---------------------------------------------------------------------------------------------------
+
+app.put('/updatePolygon/:id', async (req, res) => {
+    const { id } = req.params;
+    const { gpolygonname, coordinates } = req.body;
+
+    if (!gpolygonname || !coordinates) {
+        return res.status(400).send('Missing required fields: gpolygonname or coordinates');
+    }
+
+    const polygonCoords = coordinates.map(coord => coord.join(' ')).join(', ');
+    const polygonWKT = `POLYGON ((${polygonCoords}))`;
+
+    try {
+        // Update the polygon in the database
+        const query = `
+            UPDATE public.geopolygon
+            SET gpolygonname = $1,
+                gpolygon = ST_GeomFromText($2, 4326)
+            WHERE gpolygonid = $3
+        `;
+        const values = [gpolygonname, polygonWKT, id];
+
+        const result = await pool.query(query, values);
+
+        if (result.rowCount > 0) {
+            res.status(200).send('Polygon updated successfully'+values);
+        } else {
+            res.status(404).send('Polygon not found');
+        }
+    } catch (error) {
+        console.error('Error updating polygon:', error);
+        res.status(500).send('Server error');
+    }
+});
+
+// Endpoint to get geocircle by ID
+app.get('/getCircle/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+      const result = await pool.query('SELECT * FROM public.geocircle WHERE gcircleid = $1', [id]);
+      if (result.rows.length === 0) {
+        return res.status(404).send('Geocircle not found');
+      }
+      res.json(result.rows[0]);
+    } catch (error) {
+      res.status(500).send('Error retrieving geocircle');
+    }
+  });
+  
+  // Endpoint to get geoline by ID
+  app.get('/getLine/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+      const result = await pool.query('SELECT * FROM public.geoline WHERE glineid = $1', [id]);
+      if (result.rows.length === 0) {
+        return res.status(404).send('Geoline not found');
+      }
+      res.json(result.rows[0]);
+    } catch (error) {
+      res.status(500).send('Error retrieving geoline');
+    }
+  });
+  
+  // Endpoint to get geopoint by ID
+  app.get('/getPoint/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+      const result = await pool.query('SELECT * FROM public.geopoint WHERE gpointid = $1', [id]);
+      if (result.rows.length === 0) {
+        return res.status(404).send('Geopoint not found');
+      }
+      res.json(result.rows[0]);
+    } catch (error) {
+      res.status(500).send('Error retrieving geopoint');
+    }
+  });
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  ///////// it wont work because of the WKT turned into a WKB change it..........
+
+// PUT method to update geocircle by ID
+app.put('/updateCircle/:id', async (req, res) => {
+    const { id } = req.params;
+    const { gcirclename, center, radius } = req.body;
+
+    if (!gcirclename || !center || !radius) {
+        return res.status(400).send('Missing required fields: gcirclename, center, or radius');
+    }
+
+    try {
+        const query = `
+            UPDATE public.geocircle
+            SET gcirclename = $1,
+                center = ST_GeomFromText($2, 4326),
+                radius = $3
+            WHERE gcircleid = $4
+        `;
+        const values = [gcirclename, `POINT(${center.join(' ')})`, radius, id];
+
+        const result = await pool.query(query, values);
+
+        if (result.rowCount > 0) {
+            res.status(200).send('Geocircle updated successfully');
+        } else {
+            res.status(404).send('Geocircle not found');
+        }
+    } catch (error) {
+        console.error('Error updating geocircle:', error);
+        res.status(500).send('Server error');
+    }
+});
+
+// PUT method to update geoline by ID
+app.put('/updateLine/:id', async (req, res) => {
+    const { id } = req.params;
+    const { glinename, coordinates } = req.body;
+
+    if (!glinename || !coordinates) {
+        return res.status(400).send('Missing required fields: glinename or coordinates');
+    }
+
+    const lineCoords = coordinates.map(coord => coord.join(' ')).join(', ');
+    const lineWKT = `LINESTRING (${lineCoords})`;
+
+    try {
+        const query = `
+            UPDATE public.geoline
+            SET glinename = $1,
+                gline = ST_GeomFromText($2, 4326)
+            WHERE glineid = $3
+        `;
+        const values = [glinename, lineWKT, id];
+
+        const result = await pool.query(query, values);
+
+        if (result.rowCount > 0) {
+            res.status(200).send('Geoline updated successfully');
+        } else {
+            res.status(404).send('Geoline not found');
+        }
+    } catch (error) {
+        console.error('Error updating geoline:', error);
+        res.status(500).send('Server error');
+    }
+});
+
+// PUT method to update geopoint by ID                              ///////// it wont work because of the WKT turned into a WKB change it..........
+app.put('/updatePoint/:id', async (req, res) => {
+    const { id } = req.params;
+    const { gpointname, coordinates } = req.body;
+
+    if (!gpointname || !coordinates) {
+        return res.status(400).send('Missing required fields: gpointname or coordinates');
+    }
+
+    try {
+        const query = `
+            UPDATE public.geopoint
+            SET gpointname = $1,
+                gpoint = ST_GeomFromText($2, 4326)
+            WHERE gpointid = $3
+        `;
+        const values = [gpointname, coordinates, id]; // Use the coordinates as provided in WKT format
+
+        const result = await pool.query(query, values);
+
+        if (result.rowCount > 0) {
+            res.status(200).send('Geopoint updated successfully');
+        } else {
+            res.status(404).send('Geopoint not found');
+        }
+    } catch (error) {
+        console.error('Error updating geopoint:', error);
+        res.status(500).send('Server error');
+    }
+});
+
+
+
+
+
+
+app.listen(port, () => {
+        console.log(`Server running on http://localhost:${port}`);
+    });
+
+
