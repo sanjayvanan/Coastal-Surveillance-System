@@ -8,39 +8,21 @@ const pool = new Pool({
     port: 5432,
 });
 
-
-
-const updatePolygon =  async (req, res) => {
+const getPolygon = async (req, res) => {
     const { id } = req.params;
-    const { gpolygonname, coordinates } = req.body;
 
-    if (!gpolygonname || !coordinates) {
-        return res.status(400).send('Missing required fields: gpolygonname or coordinates');
-    }
-
-    const polygonCoords = coordinates.map(coord => coord.join(' ')).join(', ');
-    const polygonWKT = `POLYGON ((${polygonCoords}))`;
 
     try {
-        // Update the polygon in the database
-        const query = `
-            UPDATE public.geopolygon
-            SET gpolygonname = $1,
-                gpolygon = ST_GeomFromText($2, 4326)
-            WHERE gpolygonid = $3
-        `;
-        const values = [gpolygonname, polygonWKT, id];
+        const result = await pool.query('SELECT * FROM public.geopolygon WHERE gpolygonid = $1', [id]);
 
-        const result = await pool.query(query, values);
-
-        if (result.rowCount > 0) {
-            res.status(200).send('Polygon updated successfully'+values);
+        if (result.rows.length > 0) {
+            res.json(result.rows[0]);
         } else {
             res.status(404).send('Polygon not found');
         }
-    } catch (error) {
-        console.error('Error updating polygon:', error);
-        res.status(500).send('Server error');
+    } catch (err) {
+        console.error('Error during database query:', err);
+        res.status(500).send('Server Error');
     }
 };
 
@@ -91,7 +73,53 @@ const getCircle = async (req, res) => {
 
 
 
-  // //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+//updaing the polygon
+// PUT method to update polygon by ID
+const updatePolygon = async (req, res) => {
+    const { id } = req.params;
+    const { gpolygonname, coordinates } = req.body;
+
+    // Check for required fields: gpolygonname and coordinates
+    if (!gpolygonname || !coordinates) {
+        return res.status(400).send('Missing required fields: gpolygonname or coordinates');
+    }
+
+    // Construct POLYGON WKT from coordinates array
+    const polygonCoords = coordinates.map(coord => coord.join(' ')).join(', ');
+    const polygonWKT = `POLYGON ((${polygonCoords}))`;
+
+    try {
+        // SQL query to update the polygon in the database and return the updated row with WKT format
+        const query = `
+            UPDATE public.geopolygon
+            SET gpolygonname = $1,
+                gpolygon = ST_GeomFromText($2, 4326)
+            WHERE gpolygonid = $3
+            RETURNING gpolygonid, gpolygonname, ST_AsText(gpolygon) as gpolygon;  -- Convert the geometry to WKT format and include the ID
+        `;
+        const values = [gpolygonname, polygonWKT, id];
+
+        // Execute the update query with parameter values
+        const result = await pool.query(query, values);
+
+        // Check if any rows were updated
+        if (result.rowCount > 0) {
+            // Return the updated polygon details including the ID
+            res.status(200).json(result.rows[0]);
+        } else {
+            res.status(404).send('Polygon not found');
+        }
+    } catch (error) {
+        console.error('Error updating polygon:', error);
+        res.status(500).send('Server error');
+    }
+};
+
+
+
+
 // PUT method to update geocircle by ID
 const updatGeoCircle = async (req, res) => {
     const { id } = req.params;
@@ -102,19 +130,22 @@ const updatGeoCircle = async (req, res) => {
     }
 
     try {
+        // Update the geocircle and return the updated row
         const query = `
             UPDATE public.geocircle
             SET gcirclename = $1,
-                gcenter = ST_GeomFromText($2, 4326),  -- Use 'gcenter' instead of 'center'
+                gcenter = ST_GeomFromText($2, 4326),  
                 gradius = $3
             WHERE gcircleid = $4
+            RETURNING *; 
         `;
         const values = [gcirclename, `POINT(${center.join(' ')})`, radius, id];
 
         const result = await pool.query(query, values);
 
         if (result.rowCount > 0) {
-            res.status(200).send('Geocircle updated successfully');
+            // Return the updated geocircle details
+            res.status(200).json(result.rows[0]);
         } else {
             res.status(404).send('Geocircle not found');
         }
@@ -123,7 +154,6 @@ const updatGeoCircle = async (req, res) => {
         res.status(500).send('Server error');
     }
 };
-
 
 
 // PUT method to update geoline by ID
@@ -141,12 +171,13 @@ const updateGeoLine = async (req, res) => {
     const lineWKT = `LINESTRING (${lineCoords})`;
 
     try {
-        // SQL query to update the geoline in the database
+        // SQL query to update the geoline in the database and return the updated row with WKT format
         const query = `
             UPDATE public.geoline
             SET glinename = $1,
-                gline = ST_GeomFromText($2, 4326)  -- Using PostGIS function for LINESTRING geometry
+                gline = ST_GeomFromText($2, 4326)
             WHERE glineid = $3
+            RETURNING glineid, glinename, ST_AsText(gline) as gline;  -- Convert the geometry to WKT format and include the ID
         `;
         const values = [glinename, lineWKT, id];
 
@@ -155,7 +186,8 @@ const updateGeoLine = async (req, res) => {
 
         // Check if any rows were updated
         if (result.rowCount > 0) {
-            res.status(200).send('Geoline updated successfully');
+            // Return the updated geoline details including the ID
+            res.status(200).json(result.rows[0]);
         } else {
             res.status(404).send('Geoline not found');
         }
@@ -166,28 +198,35 @@ const updateGeoLine = async (req, res) => {
 };
 
 
+
 // PUT method to update geopoint by ID                             
-const updateGeoPoint  = async (req, res) => {
+const updateGeoPoint = async (req, res) => {
     const { id } = req.params;
     const { gpointname, coordinates } = req.body;
 
+    // Check for required fields: gpointname and coordinates
     if (!gpointname || !coordinates) {
         return res.status(400).send('Missing required fields: gpointname or coordinates');
     }
 
     try {
+        // SQL query to update the geopoint in the database and return the updated row with WKT format
         const query = `
             UPDATE public.geopoint
             SET gpointname = $1,
                 gpoint = ST_GeomFromText($2, 4326)
             WHERE gpointid = $3
+            RETURNING gpointid, gpointname, ST_AsText(gpoint) as gpoint;  -- Convert the geometry to WKT format and include the ID
         `;
         const values = [gpointname, coordinates, id]; // Use the coordinates as provided in WKT format
 
+        // Execute the update query with parameter values
         const result = await pool.query(query, values);
 
+        // Check if any rows were updated
         if (result.rowCount > 0) {
-            res.status(200).send('Geopoint updated successfully');
+            // Return the updated geopoint details including the ID
+            res.status(200).json(result.rows[0]);
         } else {
             res.status(404).send('Geopoint not found');
         }
@@ -198,7 +237,6 @@ const updateGeoPoint  = async (req, res) => {
 };
 
 
-
-
-
-module.exports = {updatePolygon, getCircle, getGeoLine, getGioPoint, updatGeoCircle, updateGeoLine, updateGeoPoint}
+ 
+ 
+module.exports = {getPolygon, getCircle, getGeoLine, getGioPoint, updatePolygon, updatGeoCircle, updateGeoLine, updateGeoPoint}

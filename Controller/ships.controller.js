@@ -1,5 +1,5 @@
  const { Pool } = require('pg');
- const moment = require('moment');
+ const moment = require('moment-timezone'); 
 
 
  // Connect to the PostgreSQL database
@@ -61,6 +61,7 @@ const Get_using_MMSI = async (req, res) => {
 const getBoth_MMSI_ISO =  async (req, res) => {
     const { mmsi, imo } = req.params;
 
+    
     try {
         // Fetch the filtered results from the database
         const result = await pool.query(
@@ -93,7 +94,7 @@ const GetIMO =  async (req, res) => {
 
 
 // Endpoint to get ship by name
-const get_By_name =  async (req, res) => {   ///////Wont work
+const get_By_name =  async (req, res) => {  
     const { name } = req.params;
     try {
         const result = await pool.query('SELECT * FROM "Ship_data"."ais_data" WHERE name = $1', [name]);
@@ -101,6 +102,7 @@ const get_By_name =  async (req, res) => {   ///////Wont work
             res.json(result.rows[0]);
         } else {
             res.status(404).send('Ship not found');
+
         }
     } catch (err) {
         console.error(err);
@@ -109,59 +111,80 @@ const get_By_name =  async (req, res) => {   ///////Wont work
 };
 
 
-// Endpoint to get ship by call sign           
-const getByCallSign =  async (req, res) => {             // not working
-    const { callSign } = req.params;
+const getByCallSign = async (req, res) => {                              /// need to work on it
+    let { callSign } = req.params; // Assuming you get 'callSign' from req.params
+
+    // Check if callSign is defined and is a string
+    if (typeof callSign !== 'string') {
+        return res.status(400).json({ error: "Invalid or missing callSign parameter" });
+    }
+
+    // Trim the callSign
+    callSign = callSign.trim();
+
     try {
-        const result = await pool.query('SELECT * FROM "Ship_data"."ais_data" WHERE callSign = $1', [callSign]);
+        // Replace with your actual query logic
+        const result = await pool.query('SELECT * FROM "Ship_data"."ais_data" WHERE callsign = $1', [callSign]);
+
         if (result.rows.length > 0) {
-            res.json(result.rows[0]);
+            res.json(result.rows);
         } else {
             res.status(404).send('Ship not found');
         }
     } catch (err) {
-        console.error(err);
+        console.error('Error fetching ship by callSign:', err);
         res.status(500).send('Server Error');
     }
 };
 
 
 //--------------------------------------------------------------
-function convertToMillis(dateTime) {
-    return moment(dateTime).valueOf();
+
+// Convert local time to milliseconds since Unix epoch
+function convertToMillis(dateTime, timeZone = 'UTC') {
+    return moment.tz(dateTime, timeZone).valueOf();
 }
 
 // Endpoint to fetch ships that match the time parameters
 const fetchByTime = async (req, res) => {
     const { start_time, end_time } = req.params;
-    const startMillis = convertToMillis(start_time);
-    const endMillis = convertToMillis(end_time);
-
-    // try {
-    //     // Ensure the milliseconds are valid
-    //     if (isNaN(startMillis) || isNaN(endMillis)) {
-    //         return res.status(400).json({ error: "Invalid date format" });
-    //     }
+    const { timeZone = 'UTC' } = req.query; // Time zone from query parameter, default to 'UTC'
     
-      
-    //     const query = `
-    //         SELECT *
-    //         FROM "Ship_data"."ais_data"
-    //         WHERE start_time >= $1 AND end_time <= $2
-    //         AND start_time IS NOT NULL
-    //         AND end_time IS NOT NULL;
-    //     `;
+    console.log('Requested Time Zone:', timeZone);
 
+    // Convert provided time range to milliseconds in the specified time zone
+    const startMillis = convertToMillis(start_time, timeZone);
+    const endMillis = convertToMillis(end_time, timeZone);
+
+    console.log('Start Time (ms):', startMillis);
+    console.log('End Time (ms):', endMillis);
+
+    try {
+        if (isNaN(startMillis) || isNaN(endMillis)) {
+            return res.status(400).json({ error: "Invalid date format" });
+        }
+
+        const query = `
+            SELECT *
+            FROM "Ship_data"."ais_data"
+            WHERE start_time >= $1 AND end_time <= $2
+            AND start_time IS NOT NULL
+            AND end_time IS NOT NULL;
+        `;
+
+        const result = await pool.query(query, [startMillis, endMillis]);
+
+        // console.log('Query Result:', result.rows);  // Log the result for debugging
         
-    //     const result = await pool.query(query, [startMillis, endMillis]); 
-    //     res.json(result.rows);
-    // } catch (err) {
-    //     res.status(500).json({ error: err.message });
-    //     console.error('Error:', err.message);
-    // }
-    res.json({startMillis,endMillis});
-
+        if (result.rows.length > 0) {
+            res.json(result.rows);
+        } else {
+            res.status(404).json({ message: 'No ships found within the specified time range.' });
+        }
+    } catch (err) {
+        console.error('Error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
 };
-
 
 module.exports = {getAll, Get_using_MMSI, getBoth_MMSI_ISO, GetIMO, get_By_name, getByCallSign, fetchByTime}
