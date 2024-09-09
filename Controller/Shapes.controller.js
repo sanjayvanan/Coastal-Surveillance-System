@@ -240,3 +240,4 @@ const updateGeoPoint = async (req, res) => {
  
  
 module.exports = {getPolygon, getCircle, getGeoLine, getGioPoint, updatePolygon, updatGeoCircle, updateGeoLine, updateGeoPoint}
+
