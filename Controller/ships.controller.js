@@ -10,6 +10,12 @@ const pool = new Pool({
     port: 5432,
 });
 
+// Helper function to remove unwanted fields
+const removeUnwantedFields = (obj) => {
+    const { id, track_table__uuid, track_type__id, ...rest } = obj;
+    return rest;
+};
+
 // get all the ship data with pagination
 const getAll = async (req, res) => {
     const { page = 1, limit = 10 } = req.query;
@@ -29,8 +35,10 @@ const getAll = async (req, res) => {
         const countResult = await pool.query(`SELECT COUNT(*) FROM track_table`);
         const totalRows = parseInt(countResult.rows[0].count);
 
+        const filteredData = result.rows.map(removeUnwantedFields);
+
         res.json({
-            data: result.rows,
+            data: filteredData,
             meta: {
                 totalRows,
                 currentPage: parseInt(page),
@@ -63,7 +71,8 @@ const Get_using_UUID = async (req, res) => {
         );
 
         if (result.rows.length > 0) {
-            res.json(result.rows[0]);
+            const filteredData = removeUnwantedFields(result.rows[0]);
+            res.json(filteredData);
         } else {
             res.status(404).json({ message: 'Ship not found' });
         }
@@ -85,7 +94,8 @@ const Get_using_MMSI = async (req, res) => {
             [mmsi]
         );
         if (result.rows.length > 0) {
-            res.json(result.rows[0]);
+            const filteredData = removeUnwantedFields(result.rows[0]);
+            res.json(filteredData);
         } else {
             res.status(404).send('Ship not found');
         }
@@ -110,7 +120,8 @@ const getBoth_MMSI_ISO =  async (req, res) => {
             [mmsi, imo]
         );
 
-        res.json(result.rows);
+        const filteredData = result.rows.map(removeUnwantedFields);
+        res.json(filteredData);
     } catch (err) {
         res.status(500).json({ msg: "Problem in the fetch", error: err.message });
     }
@@ -128,7 +139,8 @@ const GetIMO = async (req, res) => {
             [imo]
         );
         if (result.rows.length > 0) {
-            res.json(result.rows[0]);
+            const filteredData = removeUnwantedFields(result.rows[0]);
+            res.json(filteredData);
         } else {
             res.status(404).send('Ship not found');
         }
@@ -150,7 +162,8 @@ const get_By_name = async (req, res) => {
             [`%${name}%`]
         );
         if (result.rows.length > 0) {
-            res.json(result.rows);
+            const filteredData = result.rows.map(removeUnwantedFields);
+            res.json(filteredData);
         } else {
             res.status(404).send('Ship not found');
         }
@@ -179,7 +192,8 @@ const getByCallSign = async (req, res) => {
         );
 
         if (result.rows.length > 0) {
-            res.json(result.rows);
+            const filteredData = result.rows.map(removeUnwantedFields);
+            res.json(filteredData);
         } else {
             res.status(404).send('Ship not found');
         }
@@ -220,7 +234,8 @@ const fetchByTime = async (req, res) => {
         const result = await pool.query(query, [startMillis, endMillis]);
 
         if (result.rows.length > 0) {
-            res.json(result.rows);
+            const filteredData = result.rows.map(removeUnwantedFields);
+            res.json(filteredData);
         } else {
             res.status(404).json({ message: 'No ships found within the specified time range.' });
         }
@@ -230,4 +245,58 @@ const fetchByTime = async (req, res) => {
     }
 };
 
-module.exports = {getAll, Get_using_MMSI, Get_using_UUID, getBoth_MMSI_ISO, GetIMO, get_By_name, getByCallSign, fetchByTime}
+// Function to get ship track history by UUID
+const getShipTrackHistory = async (req, res) => {
+    const { uuid } = req.params;
+    const { hours = 12 } = req.query; // Default to 12 hours if not specified
+
+    // Validate UUID input
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(uuid)) {
+        return res.status(400).json({ error: "Invalid UUID format" });
+    }
+
+    // Validate hours input
+    const parsedHours = parseInt(hours);
+    if (isNaN(parsedHours) || parsedHours <= 0) {
+        return res.status(400).json({ error: "Invalid hours parameter" });
+    }
+
+    try {
+        const currentTimeMs = Date.now();
+        const hoursInMs = parsedHours * 60 * 60 * 1000;
+        const startTimeMs = currentTimeMs - hoursInMs;
+
+        const query = `
+            SELECT 
+                latitude, 
+                longitude, 
+                speed_over_ground,
+                course_over_ground,
+                true_heading,
+                rate_of_turn,
+                sensor_timestamp
+            FROM track_history
+            WHERE track__uuid = $1
+              AND sensor_timestamp >= $2
+            ORDER BY sensor_timestamp ASC
+        `;
+
+        const result = await pool.query(query, [uuid, startTimeMs]);
+
+        if (result.rows.length > 0) {
+            res.json({
+                uuid: uuid,
+                hours: parsedHours,
+                trackHistory: result.rows
+            });
+        } else {
+            res.status(404).json({ message: `No track history found for the given UUID in the last ${parsedHours} hours.` });
+        }
+    } catch (err) {
+        console.error('Error fetching ship track history:', err);
+        res.status(500).json({ error: 'Server Error' });
+    }
+};
+
+module.exports = {getAll, Get_using_MMSI, Get_using_UUID, getBoth_MMSI_ISO, GetIMO, get_By_name, getByCallSign, fetchByTime, getShipTrackHistory}
