@@ -38,7 +38,7 @@ app.use('/api/region-marking/', geoRouter);
 
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
-  console.log(`Swagger documentation available at http://localhost:${port}/api-d/ocs`);
+  console.log(`Swagger documentation available at http://localhost:${port}/api-docs`);
 });
 
 

@@ -6,7 +6,7 @@ const pool = new Pool({
     user: 'track_user',
     host: '192.168.1.100',
     database: 'track_processor',
-    password: 'qwerty',
+    password: 'zosh',
     port: 5432,
 });
 
@@ -18,37 +18,51 @@ const removeUnwantedFields = (obj) => {
 
 // get all the ship data with pagination
 const getAll = async (req, res) => {
-    const { page = 1, limit = 10 } = req.query;
-    
+    const { page, limit } = req.query;
+
+    // Check if both page and limit are not passed
+    const isPaginationApplied = page !== undefined && limit !== undefined;
+
     try {
-        const offset = (page - 1) * limit;
+        let query = `
+            SELECT t.*, v.* 
+            FROM track_table t
+            LEFT JOIN track_voyage_data v ON t.uuid = v.track_table__uuid
+            ORDER BY t.mmsi
+        `;
 
-        const result = await pool.query(
-            `SELECT t.*, v.* 
-             FROM track_table t
-             LEFT JOIN track_voyage_data v ON t.uuid = v.track_table__uuid
-             ORDER BY t.mmsi 
-             LIMIT $1 OFFSET $2`,
-            [limit, offset]
-        );
+        let queryParams = [];
+        if (isPaginationApplied) {
+            // If pagination is applied, add limit and offset
+            const offset = (page - 1) * limit;
+            query += ` LIMIT $1 OFFSET $2`;
+            queryParams = [limit, offset];
+        }
 
+        // Execute the query with or without pagination
+        const result = await pool.query(query, queryParams);
+
+        // Get the total count of rows in track_table
         const countResult = await pool.query(`SELECT COUNT(*) FROM track_table`);
         const totalRows = parseInt(countResult.rows[0].count);
 
+        // Remove unwanted fields from the data
         const filteredData = result.rows.map(removeUnwantedFields);
 
         res.json({
             data: filteredData,
-            meta: {
+            meta: isPaginationApplied ? {
                 totalRows,
                 currentPage: parseInt(page),
                 totalPages: Math.ceil(totalRows / limit)
+            } : {
+                totalRows
             }
         });
     } catch (err) {
         res.status(500).json({ msg: "Problem in the fetch", error: err.message });
     }
-}
+};
 
 // Endpoint to get ship by UUID
 const Get_using_UUID = async (req, res) => {
@@ -299,4 +313,61 @@ const getShipTrackHistory = async (req, res) => {
     }
 };
 
-module.exports = {getAll, Get_using_MMSI, Get_using_UUID, getBoth_MMSI_ISO, GetIMO, get_By_name, getByCallSign, fetchByTime, getShipTrackHistory}
+
+//mesaage_types 
+const getAllMessageTypes = async (req, res) => {
+    try {
+        // Query to select all rows from the message_types table
+        const result = await pool.query('SELECT * FROM message_types');
+
+        // Check if there are any results
+        if (result.rows.length > 0) {
+            res.json(result.rows); // Return the message types
+        } else {
+            res.status(404).json({ message: 'No message types found' });
+        }
+    } catch (err) {
+        console.error('Error fetching message types:', err);
+        res.status(500).json({ error: 'Server Error' });
+    }
+};
+
+
+// Function to get all track types
+const getAllTrackTypes = async (req, res) => {
+    try {
+        // Query to select all rows from the track_type table
+        const result = await pool.query('SELECT * FROM track_type');
+
+        // Check if there are any results
+        if (result.rows.length > 0) {
+            res.json(result.rows); // Return the track types
+        } else {
+            res.status(404).json({ message: 'No track types found' });
+        }
+    } catch (err) {
+        console.error('Error fetching track types:', err);
+        res.status(500).json({ error: 'Server Error' });
+    }
+};
+
+// Function to get all track navigation statuses
+const getAllTrackNavStatuses = async (req, res) => {
+    try {
+        // Query to select all rows from the track_nav_status table
+        const result = await pool.query('SELECT * FROM track_nav_status');
+
+        // Check if there are any results
+        if (result.rows.length > 0) {
+            res.json(result.rows); // Return the track navigation statuses
+        } else {
+            res.status(404).json({ message: 'No navigation statuses found' });
+        }
+    } catch (err) {
+        console.error('Error fetching track navigation statuses:', err);
+        res.status(500).json({ error: 'Server Error' });
+    }
+};
+
+
+module.exports = {getAll, Get_using_MMSI, Get_using_UUID, getBoth_MMSI_ISO, GetIMO, get_By_name, getByCallSign, fetchByTime, getShipTrackHistory, getAllMessageTypes, getAllTrackTypes, getAllTrackNavStatuses}

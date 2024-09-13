@@ -8,7 +8,10 @@ const {
   get_By_name,
   getByCallSign,
   fetchByTime,
-  getShipTrackHistory
+  getShipTrackHistory,
+  getAllMessageTypes,
+  getAllTrackTypes,
+  getAllTrackNavStatuses
 } = require("../Controller/ships.controller.js");
 const router = express.Router();
 
@@ -183,23 +186,11 @@ router.get("/mmsi/:mmsi", Get_using_MMSI);
  * @swagger
  * /api/ships:
  *   get:
- *     summary: Get all ships with pagination
- *     parameters:
- *       - in: query
- *         name: page
- *         schema:
- *           type: integer
- *         description: Page number (default: 1)
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *         description: Number of items per page (default: 10)
+ *     summary: Get all ships
+ *     description: Retrieve a list of all ships
  *     responses:
  *       200:
  *         description: Successful response
- *       500:
- *         description: Server error
  */
 router.get("/", getAll);
 
@@ -226,5 +217,11 @@ router.get("/", getAll);
  *         description: Server error
  */
 router.get("/:mmsi/:imo", getBoth_MMSI_ISO);
+
+
+
+router.get("/Message-Types",getAllMessageTypes)
+router.get("/TrackTypes", getAllTrackTypes)
+router.get("/TrackNavStatuses", getAllTrackNavStatuses)
 
 module.exports = router;
