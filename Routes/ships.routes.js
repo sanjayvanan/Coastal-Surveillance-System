@@ -11,8 +11,12 @@ const {
   getShipTrackHistory,
   getAllMessageTypes,
   getAllTrackTypes,
-  getAllTrackNavStatuses
+  getAllTrackNavStatuses,
 } = require("../Controller/ships.controller.js");
+
+const {
+  trackList
+} = require("../Controller/trackList.controller.js")
 const router = express.Router();
 
 /**
@@ -219,9 +223,8 @@ router.get("/", getAll);
 router.get("/:mmsi/:imo", getBoth_MMSI_ISO);
 
 
-
 router.get("/Message-Types",getAllMessageTypes)
 router.get("/TrackTypes", getAllTrackTypes)
 router.get("/TrackNavStatuses", getAllTrackNavStatuses)
-
+router.get("/trackList",  trackList)
 module.exports = router;

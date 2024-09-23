@@ -260,7 +260,7 @@ const fetchByTime = async (req, res) => {
 };
 
 // Function to get ship track history by UUID
-const getShipTrackHistory = async (req, res) => {
+const  getShipTrackHistory = async (req, res) => {
     const { uuid } = req.params;
     const { hours = 12 } = req.query; // Default to 12 hours if not specified
 
@@ -369,5 +369,8 @@ const getAllTrackNavStatuses = async (req, res) => {
     }
 };
 
+const trackList = async(req, res) =>{
 
-module.exports = {getAll, Get_using_MMSI, Get_using_UUID, getBoth_MMSI_ISO, GetIMO, get_By_name, getByCallSign, fetchByTime, getShipTrackHistory, getAllMessageTypes, getAllTrackTypes, getAllTrackNavStatuses}
+}
+
+module.exports = {getAll, Get_using_MMSI, Get_using_UUID, getBoth_MMSI_ISO, GetIMO, get_By_name, getByCallSign, fetchByTime, getShipTrackHistory, getAllMessageTypes, getAllTrackTypes, getAllTrackNavStatuses,  trackList}
