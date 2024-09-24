@@ -260,7 +260,7 @@ const fetchByTime = async (req, res) => {
 };
 
 // Function to get ship track history by UUID
-const  getShipTrackHistory = async (req, res) => {
+const getShipTrackHistory = async (req, res) => {
     const { uuid } = req.params;
     const { hours = 12 } = req.query; // Default to 12 hours if not specified
 
@@ -281,31 +281,22 @@ const  getShipTrackHistory = async (req, res) => {
         const hoursInMs = parsedHours * 60 * 60 * 1000;
         const startTimeMs = currentTimeMs - hoursInMs;
 
-        const query = `
-            SELECT 
-                latitude, 
-                longitude, 
-                speed_over_ground,
-                course_over_ground,
-                true_heading,
-                rate_of_turn,
-                sensor_timestamp
-            FROM track_history
-            WHERE track__uuid = $1
-              AND sensor_timestamp >= $2
-            ORDER BY sensor_timestamp ASC
-        `;
+        const query = `SELECT latitude, longitude, speed_over_ground, course_over_ground, true_heading, rate_of_turn, sensor_timestamp, TO_TIMESTAMP(sensor_timestamp / 1000) AS formatted_timestamp FROM track_history WHERE track__uuid = $1 AND sensor_timestamp >= $2 ORDER BY sensor_timestamp DESC`;
 
         const result = await pool.query(query, [uuid, startTimeMs]);
 
-        if (result.rows.length > 0) {
+        if (result.rows.length >0) {
             res.json({
                 uuid: uuid,
                 hours: parsedHours,
-                trackHistory: result.rows
+                trackHistory: result.rows.map(row => ({
+                    ...row,
+                    formatted_timestamp: row.formatted_timestamp.toISOString()
+                }))
             });
         } else {
-            res.status(404).json({ message: `No track history found for the given UUID in the last ${parsedHours} hours.` });
+            res.status(404).json({ message: `No track history found for the given UUID in the last ${parsedHours} hours.${currentTimeMs} ${hoursInMs} ${startTimeMs}`, result1:result,
+            query:`SELECT latitude,longitude,speed_over_ground,course_over_ground,true_heading,rate_of_turn,sensor_timestamp,TO_TIMESTAMP(sensor_timestamp / 1000) AS formatted_timestamp FROM track_history WHERE track__uuid = '${uuid}' AND sensor_timestamp >= '${startTimeMs}' ORDER BY sensor_timestamp DESC` });
         }
     } catch (err) {
         console.error('Error fetching ship track history:', err);
