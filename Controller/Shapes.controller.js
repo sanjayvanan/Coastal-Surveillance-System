@@ -1,4 +1,7 @@
 const { Pool } = require('pg');
+const { v4: uuidv4 } = require('uuid');
+const wkx = require('wkx');
+
 // Connect to the PostgreSQL database
 const pool = new Pool({
     user: 'postgres',
@@ -236,8 +239,7 @@ const updateGeoPoint = async (req, res) => {
     }
 };
 
+//**************************************************************************************************************************** */
 
- 
  
 module.exports = {getPolygon, getCircle, getGeoLine, getGioPoint, updatePolygon, updatGeoCircle, updateGeoLine, updateGeoPoint}
-

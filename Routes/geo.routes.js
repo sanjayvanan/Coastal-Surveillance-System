@@ -1,5 +1,6 @@
 const express = require('express');
 const {getPolygon, getCircle, getGeoLine, getGioPoint, updatePolygon, updatGeoCircle, updateGeoLine, updateGeoPoint} = require('../Controller/Shapes.controller')
+const {storePolygon, getShipsWithinPolygon} = require('../Controller/Storing_shapes.controller.js')
 const router = express.Router();
 
 /**
@@ -209,5 +210,9 @@ router.put('/updateLine/:id', updateGeoLine)
  *         description: Point not found
  */
 router.put('/updatePoint/:id', updateGeoPoint)
+
+
+router.post("/store-polygon", storePolygon)
+router.get("/ships-within-polygon/:polygonWKT", getShipsWithinPolygon);
 
 module.exports = router;

@@ -8,15 +8,13 @@ const {
   get_By_name,
   getByCallSign,
   fetchByTime,
+  trackList,
+  getShipTrackHistory,
   getAllMessageTypes,
   getAllTrackTypes,
   getAllTrackNavStatuses,
 } = require("../Controller/ships.controller.js");
 
-const {
-  trackList,
-  getShipTrackHistory
-} = require("../Controller/trackList.controller.js")
 const router = express.Router();
 
 /**

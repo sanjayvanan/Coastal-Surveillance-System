@@ -5,14 +5,14 @@ const moment = require('moment-timezone');
 const pool = new Pool({
     user: 'track_user',
     host: '192.168.1.100',
-    database: 'track_processor',
+    database: 'track_processor_v2', // Updated database name
     password: 'zosh',
     port: 5432,
 });
 
 // Helper function to remove unwanted fields
 const removeUnwantedFields = (obj) => {
-    const { id, track_table__uuid, track_type__id, ...rest } = obj;
+    const { created_at, created_by, updated_at, updated_by, ...rest } = obj;
     return rest;
 };
 
@@ -25,28 +25,52 @@ const getAll = async (req, res) => {
 
     try {
         let query = `
-            SELECT t.*, v.* 
-            FROM track_table t
-            LEFT JOIN track_voyage_data v ON t.uuid = v.track_table__uuid
-            ORDER BY t.mmsi
+            SELECT 
+                tl.*,
+                vd.id AS vd_id, 
+                vd.imo, 
+                vd.call_sign, 
+                vd.vessel_name, 
+                vd.dimension_to_bow, 
+                vd.dimension_to_stern, 
+                vd.dimension_to_port, 
+                vd.dimension_to_starboard, 
+                vd.destination, 
+                vd.eta,
+                mt.short_desc as message_type,
+                ns.nav_status
+            FROM 
+                track_list tl
+            LEFT JOIN 
+                track_voyage_data vd ON tl.uuid = vd.track_table__uuid
+            LEFT JOIN 
+                message_types mt ON tl.message_type__id = mt.id
+            LEFT JOIN 
+                track_nav_status ns ON tl.track_nav_status__id = ns.id
+            ORDER BY 
+                tl.mmsi
         `;
 
         let queryParams = [];
         if (isPaginationApplied) {
-            // If pagination is applied, add limit and offset
             const offset = (page - 1) * limit;
             query += ` LIMIT $1 OFFSET $2`;
             queryParams = [limit, offset];
         }
 
-        // Execute the query with or without pagination
         const result = await pool.query(query, queryParams);
 
-        // Get the total count of rows in track_table
-        const countResult = await pool.query(`SELECT COUNT(*) FROM track_table`);
+        const countResult = await pool.query(`SELECT COUNT(*) FROM track_list`);
         const totalRows = parseInt(countResult.rows[0].count);
 
-        // Remove unwanted fields from the data
+        // Add diagnostic information
+        const diagnosticInfo = {
+            totalRows,
+            rowsReturned: result.rows.length,
+            sampleRow: result.rows[0],
+            nullVoyageDataCount: result.rows.filter(row => row.vd_id === null).length
+        };
+
         const filteredData = result.rows.map(removeUnwantedFields);
 
         res.json({
@@ -57,9 +81,11 @@ const getAll = async (req, res) => {
                 totalPages: Math.ceil(totalRows / limit)
             } : {
                 totalRows
-            }
+            },
+            diagnosticInfo
         });
     } catch (err) {
+        console.error('Error fetching ships:', err);
         res.status(500).json({ msg: "Problem in the fetch", error: err.message });
     }
 };
@@ -77,10 +103,16 @@ const Get_using_UUID = async (req, res) => {
     try {
         // Fetch ship data by UUID
         const result = await pool.query(
-            `SELECT t.*, v.* 
-             FROM track_table t
-             LEFT JOIN track_voyage_data v ON t.uuid = v.track_table__uuid
-             WHERE t.uuid = $1`, 
+            `SELECT tl.*, vd.imo, vd.call_sign, vd.vessel_name, vd.dimension_to_bow, 
+                    vd.dimension_to_stern, vd.dimension_to_port, vd.dimension_to_starboard, 
+                    vd.destination, vd.eta, 
+                    mt.short_desc as message_type, 
+                    ns.nav_status
+             FROM track_list tl
+             LEFT JOIN track_voyage_data vd ON tl.uuid = vd.track_table__uuid
+             LEFT JOIN message_types mt ON tl.message_type__id = mt.id
+             LEFT JOIN track_nav_status ns ON tl.track_nav_status__id = ns.id
+             WHERE tl.uuid = $1`, 
             [id]
         );
 
@@ -102,7 +134,7 @@ const Get_using_MMSI = async (req, res) => {
     try {
         const result = await pool.query(
             `SELECT t.*, v.* 
-             FROM track_table t
+             FROM track_list t
              LEFT JOIN track_voyage_data v ON t.uuid = v.track_table__uuid
              WHERE t.mmsi = $1`, 
             [mmsi]
@@ -128,7 +160,7 @@ const getBoth_MMSI_ISO =  async (req, res) => {
         // Fetch the filtered results from the database
         const result = await pool.query(
             `SELECT t.*, v.* 
-             FROM track_table t
+             FROM track_list t
              LEFT JOIN track_voyage_data v ON t.uuid = v.track_table__uuid
              WHERE t.mmsi = $1 AND v.imo = $2`,
             [mmsi, imo]
@@ -147,7 +179,7 @@ const GetIMO = async (req, res) => {
     try {
         const result = await pool.query(
             `SELECT t.*, v.* 
-             FROM track_table t
+             FROM track_list t
              LEFT JOIN track_voyage_data v ON t.uuid = v.track_table__uuid
              WHERE v.imo = $1`, 
             [imo]
@@ -170,7 +202,7 @@ const get_By_name = async (req, res) => {
     try {
         const result = await pool.query(
             `SELECT t.*, v.* 
-             FROM track_table t
+             FROM track_list t
              LEFT JOIN track_voyage_data v ON t.uuid = v.track_table__uuid
              WHERE v.vessel_name ILIKE $1`, 
             [`%${name}%`]
@@ -199,7 +231,7 @@ const getByCallSign = async (req, res) => {
     try {
         const result = await pool.query(
             `SELECT t.*, v.* 
-             FROM track_table t
+             FROM track_list t
              LEFT JOIN track_voyage_data v ON t.uuid = v.track_table__uuid
              WHERE v.call_sign ILIKE $1`, 
             [`%${callSign}%`]
@@ -239,7 +271,7 @@ const fetchByTime = async (req, res) => {
 
         const query = `
             SELECT t.*, v.*
-            FROM track_table t
+            FROM track_list t
             LEFT JOIN track_voyage_data v ON t.uuid = v.track_table__uuid
             WHERE t.sensor_timestamp >= $1 AND t.sensor_timestamp <= $2
             AND t.sensor_timestamp IS NOT NULL;
@@ -258,6 +290,23 @@ const fetchByTime = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
+
+const trackList = async(req, res) =>{
+    try {
+        // Query to select all rows from the track_nav_status table
+        const result = await pool.query('SELECT * FROM track_list');
+
+        // Check if there are any results
+        if (result.rows.length > 0) {
+            res.json(result.rows); // Return the track navigation statuses
+        } else {
+            res.status(404).json({ message: 'No track List found' });
+        }
+    } catch (err) {
+        console.error('Error fetching track Lists:', err);
+        res.status(500).json({ error: 'Server Error' });
+    }
+}
 
 // Function to get ship track history by UUID
 const getShipTrackHistory = async (req, res) => {
@@ -281,11 +330,18 @@ const getShipTrackHistory = async (req, res) => {
         const hoursInMs = parsedHours * 60 * 60 * 1000;
         const startTimeMs = currentTimeMs - hoursInMs;
 
-        const query = `SELECT latitude, longitude, speed_over_ground, course_over_ground, true_heading, rate_of_turn, sensor_timestamp, TO_TIMESTAMP(sensor_timestamp / 1000) AS formatted_timestamp FROM track_history WHERE track__uuid = $1 AND sensor_timestamp >= $2 ORDER BY sensor_timestamp DESC`;
+        const query = `
+            SELECT latitude, longitude, speed_over_ground, course_over_ground,
+                   true_heading, rate_of_turn, sensor_timestamp,
+                   TO_TIMESTAMP(sensor_timestamp / 1000) AS formatted_timestamp 
+            FROM track_history 
+            WHERE track__uuid = $1 AND sensor_timestamp >= $2 
+            ORDER BY sensor_timestamp DESC
+        `;
 
         const result = await pool.query(query, [uuid, startTimeMs]);
 
-        if (result.rows.length >0) {
+        if (result.rows.length > 0) {
             res.json({
                 uuid: uuid,
                 hours: parsedHours,
@@ -295,8 +351,13 @@ const getShipTrackHistory = async (req, res) => {
                 }))
             });
         } else {
-            res.status(404).json({ message: `No track history found for the given UUID in the last ${parsedHours} hours.${currentTimeMs} ${hoursInMs} ${startTimeMs}`, result1:result,
-            query:`SELECT latitude,longitude,speed_over_ground,course_over_ground,true_heading,rate_of_turn,sensor_timestamp,TO_TIMESTAMP(sensor_timestamp / 1000) AS formatted_timestamp FROM track_history WHERE track__uuid = '${uuid}' AND sensor_timestamp >= '${startTimeMs}' ORDER BY sensor_timestamp DESC` });
+            res.status(404).json({
+                message: `No track history found for the given UUID in the last ${parsedHours} hours.`,
+                currentTimeMs,
+                hoursInMs,
+                startTimeMs,
+                result
+            });
         }
     } catch (err) {
         console.error('Error fetching ship track history:', err);
@@ -360,8 +421,8 @@ const getAllTrackNavStatuses = async (req, res) => {
     }
 };
 
-const trackList = async(req, res) =>{
 
-}
 
-module.exports = {getAll, Get_using_MMSI, Get_using_UUID, getBoth_MMSI_ISO, GetIMO, get_By_name, getByCallSign, fetchByTime, getShipTrackHistory, getAllMessageTypes, getAllTrackTypes, getAllTrackNavStatuses,  trackList}
+
+
+module.exports = {getAll, Get_using_MMSI, Get_using_UUID, getBoth_MMSI_ISO, GetIMO, get_By_name, getByCallSign, fetchByTime, getShipTrackHistory, getAllMessageTypes, getAllTrackTypes, getAllTrackNavStatuses, trackList}
