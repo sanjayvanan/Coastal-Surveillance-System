@@ -293,8 +293,8 @@ const fetchByTime = async (req, res) => {
 
 const trackList = async(req, res) =>{
     try {
-        // Query to select all rows from the track_nav_status table
-        const result = await pool.query('SELECT * FROM track_list');
+        // Query to select all rows from the track_nav_status table recent data at top
+        const result = await pool.query('SELECT * FROM track_list ORDER BY sensor_timestamp DESC');
 
         // Check if there are any results
         if (result.rows.length > 0) {
@@ -308,10 +308,81 @@ const trackList = async(req, res) =>{
     }
 }
 
+// Helper function to calculate perpendicular distance
+function perpendicularDistance(point, lineStart, lineEnd) {
+    const [x, y] = [point.longitude, point.latitude];
+    const [x1, y1] = [lineStart.longitude, lineStart.latitude];
+    const [x2, y2] = [lineEnd.longitude, lineEnd.latitude];
+
+    const A = x - x1;
+    const B = y - y1;
+    const C = x2 - x1;
+    const D = y2 - y1;
+
+    const dot = A * C + B * D;
+    const len_sq = C * C + D * D;
+    const param = dot / len_sq;
+
+    let xx, yy;
+
+    if (param < 0) {
+        xx = x1;
+        yy = y1;
+    } else if (param > 1) {
+        xx = x2;
+        yy = y2;
+    } else {
+        xx = x1 + param * C;
+        yy = y1 + param * D;
+    }
+
+    const dx = x - xx;
+    const dy = y - yy;
+
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
+// Recursive function to simplify line
+function simplifyLine(points, epsilon, result, start, end) {
+    if (end - start < 2) {
+        return;
+    }
+
+    let maxDistance = 0;
+    let indexFarthest = start;
+
+    for (let i = start + 1; i < end; i++) {
+        const distance = perpendicularDistance(points[i], points[start], points[end]);
+        if (distance > maxDistance) {
+            maxDistance = distance;
+            indexFarthest = i;
+        }
+    }
+
+    if (maxDistance > epsilon) {
+        simplifyLine(points, epsilon, result, start, indexFarthest);
+        result.push(points[indexFarthest]);
+        simplifyLine(points, epsilon, result, indexFarthest, end);
+    }
+}
+
+// Main function to optimize line
+function optimizeLine(points, epsilon) {
+    if (points.length < 3) {
+        return points;
+    }
+
+    const result = [points[0]];
+    simplifyLine(points, epsilon, result, 0, points.length - 1);
+    result.push(points[points.length - 1]);
+
+    return result;
+}
+
 // Function to get ship track history by UUID
 const getShipTrackHistory = async (req, res) => {
     const { uuid } = req.params;
-    const { hours = 12 } = req.query; // Default to 12 hours if not specified
+    const { hours = 12, simplify = 'true' } = req.query; // Default to 12 hours and no simplification
 
     // Validate UUID input
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -340,15 +411,44 @@ const getShipTrackHistory = async (req, res) => {
         `;
 
         const result = await pool.query(query, [uuid, startTimeMs]);
+        console.log("Original Length : " + result.rows.length);
 
         if (result.rows.length > 0) {
+            let trackHistory;
+
+            if (simplify === 'true') {
+                // Extract coordinates for simplification
+                const points = result.rows.map(row => ({
+                    latitude: row.latitude,
+                    longitude: row.longitude,
+                    originalIndex: result.rows.indexOf(row)
+                }));
+
+                // Simplify the track
+                const epsilon = 0.0004; // Adjust this value as needed
+                const simplifiedPoints = optimizeLine(points, epsilon);
+
+                // Create simplified track history
+                trackHistory = simplifiedPoints.map(point => {
+                    const originalRow = result.rows[point.originalIndex];
+                    return {
+                        ...originalRow,
+                        formatted_timestamp: originalRow.formatted_timestamp.toISOString()
+                    };
+                });
+                console.log("Simplified Length : " + trackHistory.length);
+            } else {
+                // Use original data without simplification
+                trackHistory = result.rows.map(row => ({
+                    ...row,
+                    formatted_timestamp: row.formatted_timestamp.toISOString()
+                }));
+            }
+
             res.json({
                 uuid: uuid,
                 hours: parsedHours,
-                trackHistory: result.rows.map(row => ({
-                    ...row,
-                    formatted_timestamp: row.formatted_timestamp.toISOString()
-                }))
+                trackHistory: trackHistory,
             });
         } else {
             res.status(404).json({
