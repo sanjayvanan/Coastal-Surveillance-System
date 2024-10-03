@@ -11,6 +11,16 @@ const pool = new Pool({
     port: 5432,
 });
 
+
+// Connection pool for the track server
+const trackPool = new Pool({
+    user: 'track_user',
+    host: '192.168.1.100',
+    database: 'track_processor_v2',
+    password: 'zosh',
+    port: 5432,
+});
+
 const storePolygon = async (req, res) => {
     const { gpolygonname, coordinates, gpolygonid } = req.body;
 
@@ -84,32 +94,159 @@ const storePolygon = async (req, res) => {
     }
 };
 
-
 const getShipsWithinPolygon = async (req, res) => {
-    const { polygonWKT } = req.params;
-
     try {
-        // Decode the URL-encoded WKT
-        const decodedPolygonWKT = decodeURIComponent(polygonWKT);
+        console.log('Query parameters:', req.query);
+        const { polygonCoords } = req.query;
 
-        const shipsQuery = `
-            SELECT *
-            FROM track_list
-            WHERE ST_Within(
-                ST_SetSRID(ST_MakePoint(longitude, latitude), 4326),
-                ST_GeomFromText($1, 4326)
-            );
+        if (!polygonCoords) {
+            console.log('No polygon coordinates provided');
+            return res.status(400).json({ error: 'Polygon coordinates are required' });
+        }
+
+        console.log('Received polygon coordinates:', polygonCoords);
+
+        // Query for all ships first
+        const allShipsQuery = `
+            SELECT DISTINCT tl.mmsi, tl.track_name, tl.latitude, tl.longitude, 
+                            tvd.vessel_name, tvd.destination
+            FROM track_list tl
+            JOIN track_voyage_data tvd ON tl.uuid = tvd.track_table__uuid
+            LIMIT 10
         `;
-        const shipsResult = await pool.query(shipsQuery, [decodedPolygonWKT]);
+        console.log('Executing all ships query:', allShipsQuery);
+        const allShipsResult = await trackPool.query(allShipsQuery);
+        console.log('All ships query result:', allShipsResult.rows);
+
+        // Query for ships within this polygon
+        const shipsQuery = `
+            SELECT DISTINCT tl.mmsi, tl.track_name, tl.latitude, tl.longitude, 
+                            tvd.vessel_name, tvd.destination
+            FROM track_list tl
+            JOIN track_voyage_data tvd ON tl.uuid = tvd.track_table__uuid
+            WHERE ST_Contains(
+                ST_GeomFromText($1, 4326), 
+                ST_SetSRID(ST_MakePoint(tl.longitude, tl.latitude), 4326)
+            )
+        `;
+        console.log('Executing ships within polygon query:', shipsQuery);
+        const shipsResult = await trackPool.query(shipsQuery, [polygonCoords]);
+        console.log('Ships within polygon query result:', shipsResult.rows);
+
+        if (shipsResult.rows.length === 0) {
+            return res.status(200).json({
+                message: 'No ships found within the specified polygon',
+                ships: [],
+                allShips: allShipsResult.rows
+            });
+        }
 
         res.status(200).json({
             message: 'Ships within polygon retrieved successfully',
-            ships: shipsResult.rows
+            ships: shipsResult.rows,
+            allShips: allShipsResult.rows
         });
     } catch (err) {
         console.error('Error retrieving ships within polygon:', err);
         res.status(500).json({ error: 'Server Error', details: err.message });
     }
 };
- 
-module.exports = {storePolygon, getShipsWithinPolygon}
+
+const getShipsWithinCircle = async (req, res) => {
+    try {
+        const { centerLon, centerLat, radius } = req.query;
+        
+        if (!centerLon || !centerLat || !radius) {
+            return res.status(400).json({ error: 'Center longitude, latitude, and radius are required' });
+        }
+
+        const query = `
+            SELECT DISTINCT tl.mmsi, tl.track_name, tl.latitude, tl.longitude, 
+                            tvd.vessel_name, tvd.destination
+            FROM track_list tl
+            JOIN track_voyage_data tvd ON tl.uuid = tvd.track_table__uuid
+            WHERE ST_DWithin(
+                ST_SetSRID(ST_MakePoint(tl.longitude, tl.latitude), 4326),
+                ST_SetSRID(ST_MakePoint($1, $2), 4326),
+                $3
+            )
+        `;
+
+        const result = await trackPool.query(query, [centerLon, centerLat, radius]);
+
+        res.status(200).json({
+            message: 'Ships within circle retrieved successfully',
+            ships: result.rows
+        });
+    } catch (err) {
+        console.error('Error retrieving ships within circle:', err);
+        res.status(500).json({ error: 'Server Error', details: err.message });
+    }
+};
+
+const getShipsNearPoint = async (req, res) => {
+    try {
+        const { longitude, latitude, distance } = req.query;
+        
+        if (!longitude || !latitude || !distance) {
+            return res.status(400).json({ error: 'Longitude, latitude, and distance are required' });
+        }
+
+        const query = `
+            SELECT DISTINCT tl.mmsi, tl.track_name, tl.latitude, tl.longitude, 
+                            tvd.vessel_name, tvd.destination
+            FROM track_list tl
+            JOIN track_voyage_data tvd ON tl.uuid = tvd.track_table__uuid
+            WHERE ST_DWithin(
+                ST_SetSRID(ST_MakePoint(tl.longitude, tl.latitude), 4326),
+                ST_SetSRID(ST_MakePoint($1, $2), 4326),
+                $3
+            )
+        `;
+
+        const result = await trackPool.query(query, [longitude, latitude, distance]);
+
+        res.status(200).json({
+            message: 'Ships near point retrieved successfully',
+            ships: result.rows
+        });
+    } catch (err) {
+        console.error('Error retrieving ships near point:', err);
+        res.status(500).json({ error: 'Server Error', details: err.message });
+    }
+};
+
+// Function to get ships along a line
+const getShipsAlongLine = async (req, res) => {
+    try {
+        const { lineCoords, distance } = req.query;
+        
+        if (!lineCoords || !distance) {
+            return res.status(400).json({ error: 'Line coordinates and distance are required' });
+        }
+
+        const query = `
+            SELECT DISTINCT tl.mmsi, tl.track_name, tl.latitude, tl.longitude, 
+                            tvd.vessel_name, tvd.destination
+            FROM track_list tl
+            JOIN track_voyage_data tvd ON tl.uuid = tvd.track_table__uuid
+            WHERE ST_DWithin(
+                ST_SetSRID(ST_MakePoint(tl.longitude, tl.latitude), 4326),
+                ST_GeomFromText($1, 4326),
+                $2
+            )
+        `;
+
+        const result = await trackPool.query(query, [lineCoords, distance]);
+
+        res.status(200).json({
+            message: 'Ships along line retrieved successfully',
+            ships: result.rows
+        });
+    } catch (err) {
+        console.error('Error retrieving ships along line:', err);
+        res.status(500).json({ error: 'Server Error', details: err.message });
+    }
+};
+
+module.exports = { storePolygon, getShipsWithinPolygon, getShipsWithinCircle, getShipsNearPoint, getShipsAlongLine };

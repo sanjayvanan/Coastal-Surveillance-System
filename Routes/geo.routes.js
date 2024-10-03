@@ -1,6 +1,6 @@
 const express = require('express');
 const {getPolygon, getCircle, getGeoLine, getGioPoint, updatePolygon, updatGeoCircle, updateGeoLine, updateGeoPoint} = require('../Controller/Shapes.controller')
-const {storePolygon, getShipsWithinPolygon} = require('../Controller/Storing_shapes.controller.js')
+const {storePolygon, getShipsWithinPolygon, getShipsWithinCircle,getShipsNearPoint,getShipsAlongLine} = require('../Controller/Storing_shapes.controller.js')
 const router = express.Router();
 
 /**
@@ -213,6 +213,8 @@ router.put('/updatePoint/:id', updateGeoPoint)
 
 
 router.post("/store-polygon", storePolygon)
-router.get("/ships-within-polygon/:polygonWKT", getShipsWithinPolygon);
-
+router.get("/ships-within-polygon", getShipsWithinPolygon);
+router.get("/ships-within-circle", getShipsWithinCircle);
+router.get('/ships-near-point', getShipsNearPoint);
+router.get('/ships-along-line', getShipsAlongLine);
 module.exports = router;
