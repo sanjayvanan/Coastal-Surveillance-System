@@ -311,11 +311,8 @@ const trackList = async (req, res) => {
 
         // Check if there are any results
         if (result.rows.length > 0) {
-            res.json({
-                message: `Track list for the past ${hours} hours retrieved successfully`,
-                count: result.rows.length,
-                data: result.rows
-            });
+            res.json(
+             result.rows);
         } else {
             res.status(404).json({ message: `No track list found for the past ${hours} hours` });
         }
