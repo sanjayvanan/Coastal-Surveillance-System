@@ -1,6 +1,17 @@
 const express = require('express');
 const {getPolygon, getCircle, getGeoLine, getGioPoint, updatePolygon, updatGeoCircle, updateGeoLine, updateGeoPoint} = require('../Controller/Shapes.controller')
-const {storePolygon, getShipsWithinPolygon, getShipsWithinCircle,getShipsNearPoint,getShipsAlongLine} = require('../Controller/Storing_shapes.controller.js')
+const {
+    storePolygon, 
+    getShipsWithinPolygon, 
+    getShipsWithinCircle,
+    getShipsNearPoint,
+    getShipsAlongLine,
+    getPolygonById,
+    updatePolygonById,
+    deletePolygonById,
+    getAllPolygons,
+    getAllGraphicalObjects
+} = require('../Controller/Storing_shapes.controller.js')
 const router = express.Router();
 
 /**
@@ -211,10 +222,91 @@ router.put('/updateLine/:id', updateGeoLine)
  */
 router.put('/updatePoint/:id', updateGeoPoint)
 
+/**
+ * @swagger
+ * /api/region-marking/polygon/{id}:
+ *   get:
+ *     summary: Get polygon by ID
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *       404:
+ *         description: Polygon not found
+ */
+router.get('/polygon/:id', getPolygonById);
+
+/**
+ * @swagger
+ * /api/region-marking/polygon/{id}:
+ *   put:
+ *     summary: Update polygon by ID
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               polygonName:
+ *                 type: string
+ *               polygonCoords:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Successful update
+ *       404:
+ *         description: Polygon not found
+ */
+router.put('/polygon/:id', updatePolygonById);
+
+/**
+ * @swagger
+ * /api/region-marking/polygon/{id}:
+ *   delete:
+ *     summary: Delete polygon by ID
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Successful deletion
+ *       404:
+ *         description: Polygon not found
+ */
+router.delete('/polygon/:id', deletePolygonById);
 
 router.post("/store-polygon", storePolygon)
 router.get("/ships-within-polygon", getShipsWithinPolygon);
 router.get("/ships-within-circle", getShipsWithinCircle);
 router.get('/ships-near-point', getShipsNearPoint);
 router.get('/ships-along-line', getShipsAlongLine);
+
+/**
+ * @swagger
+ * /api/region-marking/polygons:
+ *   get:
+ *     summary: Get all polygons
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *       500:
+ *         description: Server error
+ */
+router.get('/polygons', getAllPolygons);
+router.get('/allGraphical_objects', getAllGraphicalObjects);
 module.exports = router;

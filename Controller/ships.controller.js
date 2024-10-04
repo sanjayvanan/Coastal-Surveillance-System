@@ -291,22 +291,40 @@ const fetchByTime = async (req, res) => {
     }
 };
 
-const trackList = async(req, res) =>{
+const trackList = async (req, res) => {
     try {
-        // Query to select all rows from the track_nav_status table recent data at top
-        const result = await pool.query('SELECT * FROM track_list ORDER BY sensor_timestamp DESC');
+        // Get the 'hours' parameter from the request query (default to 24 if not provided)
+        const hours = parseInt(req.query.hours) || 24;
+
+        // Calculate the timestamp for 'hours' ago
+        const hoursAgo = new Date(Date.now() - hours * 60 * 60 * 1000);
+
+        // Query to select rows from the track_list table from the past specified number of hours, ordered by most recent
+        const query = `
+            SELECT * 
+            FROM track_list 
+            WHERE sensor_timestamp >= $1
+            ORDER BY sensor_timestamp DESC
+        `;
+
+        const result = await pool.query(query, [hoursAgo.getTime()]);
 
         // Check if there are any results
         if (result.rows.length > 0) {
-            res.json(result.rows); // Return the track navigation statuses
+            res.json({
+                message: `Track list for the past ${hours} hours retrieved successfully`,
+                count: result.rows.length,
+                data: result.rows
+            });
         } else {
-            res.status(404).json({ message: 'No track List found' });
+            res.status(404).json({ message: `No track list found for the past ${hours} hours` });
         }
     } catch (err) {
         console.error('Error fetching track Lists:', err);
-        res.status(500).json({ error: 'Server Error' });
+        res.status(500).json({ error: 'Server Error', details: err.message });
     }
-}
+};
+
 
 // Helper function to calculate perpendicular distance
 function perpendicularDistance(point, lineStart, lineEnd) {

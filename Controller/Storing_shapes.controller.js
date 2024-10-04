@@ -22,135 +22,77 @@ const trackPool = new Pool({
 });
 
 const storePolygon = async (req, res) => {
-    const { gpolygonname, coordinates, gpolygonid } = req.body;
-
     try {
-        console.log('Received request:', { gpolygonname, coordinates, gpolygonid });
-
-        // Check if the table exists
-        const checkTableQuery = `
-            SELECT to_regclass('public.geopolygon') IS NOT NULL AS exists;
-        `;
-        const tableResult = await pool.query(checkTableQuery);
-        if (!tableResult.rows[0].exists) {
-            throw new Error('Table public.geopolygon does not exist');
+        const { polygonCoords, polygonName } = req.body;
+        
+        if (!polygonCoords || !polygonName) {
+            return res.status(400).json({ error: 'Polygon coordinates and name are required' });
         }
 
-        // Get column information
-        const columnInfoQuery = `
-            SELECT column_name, data_type 
-            FROM information_schema.columns 
-            WHERE table_name = 'geopolygon';
-        `;
-        const columnInfo = await pool.query(columnInfoQuery);
-        console.log('Column info:', columnInfo.rows);
+        // Get the maximum id from the graphical_objects table
+        const maxIdQuery = 'SELECT COALESCE(MAX(id), 0) + 1 as next_id FROM graphical_objects';
+        const maxIdResult = await trackPool.query(maxIdQuery);
+        const nextId = maxIdResult.rows[0].next_id;
 
-        // Determine the correct id type
-        const gpolygonidColumn = columnInfo.rows.find(row => row.column_name === 'gpolygonid');
-        if (!gpolygonidColumn) {
-            throw new Error('gpolygonid column not found in geopolygon table');
+        // Store the polygon in the graphical_objects table
+        const storePolygonQuery = `
+            INSERT INTO graphical_objects (id, name, type, geometry, unit, created_by, created_at, updated_by, updated_at)
+            VALUES ($1, $2, 'Polygon', ST_GeomFromText($3, 4326), 'meters', $4, EXTRACT(EPOCH FROM NOW())::bigint, $4, EXTRACT(EPOCH FROM NOW())::bigint)
+            RETURNING id, name, type, ST_AsText(geometry) as geometry, unit, created_by, created_at, updated_by, updated_at;
+        `;
+
+        // Assuming you have a way to get the current user, otherwise use 'admin_user'
+        const currentUser = req.user ? req.user.username : 'admin_user';
+
+        const result = await trackPool.query(storePolygonQuery, [nextId, polygonName, polygonCoords, currentUser]);
+
+        if (result.rows.length === 0) {
+            return res.status(500).json({ error: 'Failed to store polygon' });
         }
 
-        let id;
-        if (gpolygonidColumn.data_type === 'uuid') {
-            id = gpolygonid || uuidv4();
-        } else if (gpolygonidColumn.data_type === 'bigint') {
-            id = gpolygonid ? BigInt(gpolygonid) : BigInt(Date.now());
-        } else {
-            throw new Error(`Unexpected column type for gpolygonid: ${gpolygonidColumn.data_type}`);
-        }
+        const storedPolygon = result.rows[0];
 
-        // Convert coordinates to WKT
-        const polygonCoords = coordinates.map(coord => coord.join(' ')).join(', ');
-        const polygonWKT = `POLYGON((${polygonCoords}))`;
-
-        const query = `
-            INSERT INTO public.geopolygon (gpolygonid, gpolygonname, gpolygon)
-            VALUES ($1, $2, ST_GeomFromText($3, 4326))
-            RETURNING *;
-        `;
-        console.log('Executing query:', query);
-        console.log('Query parameters:', [id.toString(), gpolygonname, polygonWKT]);
-
-        const result = await pool.query(query, [id.toString(), gpolygonname, polygonWKT]);
-        console.log('Query result:', result.rows[0]);
-
-        // Verify the insertion
-        const verifyQuery = `
-            SELECT gpolygonid, gpolygonname, ST_AsText(gpolygon) as gpolygon 
-            FROM public.geopolygon 
-            WHERE gpolygonid = $1;
-        `;
-        const verifyResult = await pool.query(verifyQuery, [id]);
-        console.log('Verification query result:', verifyResult.rows[0]);
-
-        res.status(201).json({ 
-            message: 'Polygon stored successfully', 
-            polygon: verifyResult.rows[0] 
+        res.status(201).json({
+            message: 'Polygon stored successfully',
+            polygon: storedPolygon
         });
     } catch (err) {
         console.error('Error storing polygon:', err);
-        res.status(500).json({ error: 'Server Error', details: err.message, stack: err.stack });
+        res.status(500).json({ error: 'Server Error', details: err.message });
     }
 };
 
+//get all the ships within a polygon
 const getShipsWithinPolygon = async (req, res) => {
     try {
-        console.log('Query parameters:', req.query);
         const { polygonCoords } = req.query;
-
+        
         if (!polygonCoords) {
-            console.log('No polygon coordinates provided');
             return res.status(400).json({ error: 'Polygon coordinates are required' });
         }
 
-        console.log('Received polygon coordinates:', polygonCoords);
-
-        // Query for all ships first
-        const allShipsQuery = `
-            SELECT DISTINCT tl.mmsi, tl.track_name, tl.latitude, tl.longitude, 
-                            tvd.vessel_name, tvd.destination
-            FROM track_list tl
-            JOIN track_voyage_data tvd ON tl.uuid = tvd.track_table__uuid
-            LIMIT 10
-        `;
-        console.log('Executing all ships query:', allShipsQuery);
-        const allShipsResult = await trackPool.query(allShipsQuery);
-        console.log('All ships query result:', allShipsResult.rows);
-
-        // Query for ships within this polygon
         const shipsQuery = `
-            SELECT DISTINCT tl.mmsi, tl.track_name, tl.latitude, tl.longitude, 
-                            tvd.vessel_name, tvd.destination
+            SELECT DISTINCT tl.mmsi, tl.track_name, tl.latitude, tl.longitude
             FROM track_list tl
-            JOIN track_voyage_data tvd ON tl.uuid = tvd.track_table__uuid
             WHERE ST_Contains(
-                ST_GeomFromText($1, 4326), 
+                ST_GeomFromText($1, 4326),
                 ST_SetSRID(ST_MakePoint(tl.longitude, tl.latitude), 4326)
             )
         `;
-        console.log('Executing ships within polygon query:', shipsQuery);
-        const shipsResult = await trackPool.query(shipsQuery, [polygonCoords]);
-        console.log('Ships within polygon query result:', shipsResult.rows);
 
-        if (shipsResult.rows.length === 0) {
-            return res.status(200).json({
-                message: 'No ships found within the specified polygon',
-                ships: [],
-                allShips: allShipsResult.rows
-            });
-        }
+        const shipsResult = await trackPool.query(shipsQuery, [polygonCoords]);
 
         res.status(200).json({
             message: 'Ships within polygon retrieved successfully',
-            ships: shipsResult.rows,
-            allShips: allShipsResult.rows
+            ships: shipsResult.rows
         });
     } catch (err) {
         console.error('Error retrieving ships within polygon:', err);
         res.status(500).json({ error: 'Server Error', details: err.message });
     }
 };
+
+//get the ships within a circle
 
 const getShipsWithinCircle = async (req, res) => {
     try {
@@ -249,4 +191,146 @@ const getShipsAlongLine = async (req, res) => {
     }
 };
 
-module.exports = { storePolygon, getShipsWithinPolygon, getShipsWithinCircle, getShipsNearPoint, getShipsAlongLine };
+// Retrieve a polygon by ID
+const getPolygonById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        const query = `
+            SELECT id, name, type, ST_AsText(geometry) as geometry, unit, created_by, created_at, updated_by, updated_at
+            FROM graphical_objects
+            WHERE id = $1 AND type = 'Polygon';
+        `;
+
+        const result = await trackPool.query(query, [id]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Polygon not found' });
+        }
+
+        res.status(200).json({
+            message: 'Polygon retrieved successfully',
+            polygon: result.rows[0]
+        });
+    } catch (err) {
+        console.error('Error retrieving polygon:', err);
+        res.status(500).json({ error: 'Server Error', details: err.message });
+    }
+};
+
+// Update a polygon by ID
+const updatePolygonById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { polygonName, polygonCoords } = req.body;
+        
+        if (!polygonName || !polygonCoords) {
+            return res.status(400).json({ error: 'Polygon name and coordinates are required' });
+        }
+
+        const query = `
+            UPDATE graphical_objects
+            SET name = $1, geometry = ST_GeomFromText($2, 4326), updated_by = $3, updated_at = EXTRACT(EPOCH FROM NOW())::bigint
+            WHERE id = $4 AND type = 'Polygon'
+            RETURNING id, name, type, ST_AsText(geometry) as geometry, unit, created_by, created_at, updated_by, updated_at;
+        `;
+
+        const currentUser = req.user ? req.user.username : 'admin_user';
+        const result = await trackPool.query(query, [polygonName, polygonCoords, currentUser, id]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Polygon not found' });
+        }
+
+        res.status(200).json({
+            message: 'Polygon updated successfully',
+            polygon: result.rows[0]
+        });
+    } catch (err) {
+        console.error('Error updating polygon:', err);
+        res.status(500).json({ error: 'Server Error', details: err.message });
+    }
+};
+
+// Delete a polygon by ID
+const deletePolygonById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        const query = `
+            DELETE FROM graphical_objects
+            WHERE id = $1 AND type = 'Polygon'
+            RETURNING id;
+        `;
+
+        const result = await trackPool.query(query, [id]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Polygon not found' });
+        }
+
+        res.status(200).json({
+            message: 'Polygon deleted successfully',
+            deletedId: result.rows[0].id
+        });
+    } catch (err) {
+        console.error('Error deleting polygon:', err);
+        res.status(500).json({ error: 'Server Error', details: err.message });
+    }
+};
+
+const getAllGraphicalObjects = async (req, res) => {
+    try {
+        const query = `
+            SELECT id, name, type, ST_AsText(geometry) as geometry, unit, created_by, created_at, updated_by, updated_at
+            FROM graphical_objects
+            ORDER BY id;
+        `;
+
+        const result = await trackPool.query(query);
+
+        res.status(200).json({
+            message: 'Graphical objects retrieved successfully',
+            objects: result.rows
+        });
+    } catch (err) {
+        console.error('Error retrieving graphical objects:', err);
+        res.status(500).json({ error: 'Server Error', details: err.message });
+    }
+};
+
+
+// Retrieve all polygons
+const getAllPolygons = async (req, res) => {
+    try {
+        const query = `
+            SELECT id, name, type, ST_AsText(geometry) as geometry, unit, created_by, created_at, updated_by, updated_at
+            FROM graphical_objects
+            WHERE type = 'Polygon'
+            ORDER BY id;
+        `;
+
+        const result = await trackPool.query(query);
+
+        res.status(200).json({
+            message: 'Polygons retrieved successfully',
+            polygons: result.rows
+        });
+    } catch (err) {
+        console.error('Error retrieving polygons:', err);
+        res.status(500).json({ error: 'Server Error', details: err.message });
+    }
+};
+
+module.exports = { 
+    storePolygon, 
+    getShipsWithinPolygon, 
+    getShipsWithinCircle, 
+    getShipsNearPoint, 
+    getShipsAlongLine,
+    getPolygonById,
+    updatePolygonById,
+    deletePolygonById,
+    getAllPolygons,
+    getAllGraphicalObjects
+};
