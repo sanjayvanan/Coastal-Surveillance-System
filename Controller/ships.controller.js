@@ -294,7 +294,7 @@ const fetchByTime = async (req, res) => {
 const trackList = async (req, res) => {
     try {
         // Get the 'hours' parameter from the request query (default to 24 if not provided)
-        const hours = parseInt(req.query.hours) || 24;
+        const hours = parseInt(req.query.hours) || 100000;
 
         // Calculate the timestamp for 'hours' ago
         const hoursAgo = new Date(Date.now() - hours * 60 * 60 * 1000);

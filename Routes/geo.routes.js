@@ -10,7 +10,10 @@ const {
     updatePolygonById,
     deletePolygonById,
     getAllPolygons,
-    getAllGraphicalObjects
+    getAllGraphicalObjects,
+    getAllPoints,
+    getAllCircles,
+    storePoints
 } = require('../Controller/Storing_shapes.controller.js')
 const router = express.Router();
 
@@ -309,4 +312,66 @@ router.get('/ships-along-line', getShipsAlongLine);
  */
 router.get('/polygons', getAllPolygons);
 router.get('/allGraphical_objects', getAllGraphicalObjects);
+
+/**
+ * @swagger
+ * /api/region-marking/points:
+ *   get:
+ *     summary: Get all points
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *       500:
+ *         description: Server error
+ */
+router.get('/points', getAllPoints);
+
+/**
+ * @swagger
+ * /api/region-marking/circles:
+ *   get:
+ *     summary: Get all circles
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *       500:
+ *         description: Server error
+ */
+router.get('/circles', getAllCircles);
+
+/**
+ * @swagger
+ * /api/region-marking/store-points:
+ *   post:
+ *     summary: Store multiple points
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               points:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     name:
+ *                       type: string
+ *                     coordinates:
+ *                       type: array
+ *                       items:
+ *                         type: number
+ *                       minItems: 2
+ *                       maxItems: 2
+ *     responses:
+ *       201:
+ *         description: Points stored successfully
+ *       400:
+ *         description: Invalid input
+ *       500:
+ *         description: Server error
+ */
+router.post('/store-points', storePoints);
+
 module.exports = router;

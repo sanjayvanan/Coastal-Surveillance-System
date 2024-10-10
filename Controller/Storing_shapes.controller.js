@@ -322,6 +322,109 @@ const getAllPolygons = async (req, res) => {
     }
 };
 
+// Retrieve all points
+const getAllPoints = async (req, res) => {
+    try {
+        const query = `
+            SELECT id, name, type, ST_AsText(geometry) as geometry, unit, created_by, created_at, updated_by, updated_at
+            FROM graphical_objects
+            WHERE type = 'Point'
+            ORDER BY id;
+        `;
+
+        const result = await trackPool.query(query);
+
+        res.status(200).json({
+            message: 'Points retrieved successfully',
+            points: result.rows
+        });
+    } catch (err) {
+        console.error('Error retrieving points:', err);
+        res.status(500).json({ error: 'Server Error', details: err.message });
+    }
+};
+
+// Retrieve all circles (represented as points with radius)
+const getAllCircles = async (req, res) => {                     // problem is that the radius is not in meters
+    try {
+        const query = `
+            SELECT id, name, type, ST_AsText(geometry) as center, radius, unit, created_by, created_at, updated_by, updated_at
+            FROM graphical_objects
+            WHERE type = 'Point' AND radius IS NOT NULL
+            ORDER BY id;
+        `;
+
+        const result = await trackPool.query(query);
+
+        // Transform the results to include circle information
+        const circles = result.rows.map(row => ({
+            ...row,
+            type: 'Circle',
+            center: row.center,
+            radius: parseFloat(row.radius)
+        }));
+
+        res.status(200).json({
+            message: 'Circles retrieved successfully',
+            circles: circles
+        });
+    } catch (err) {
+        console.error('Error retrieving circles:', err);
+        res.status(500).json({ error: 'Server Error', details: err.message });
+    }
+};
+
+const storePoints = async (req, res) => {
+    try {
+        const { points } = req.body;
+        
+        if (!points || !Array.isArray(points) || points.length === 0) {
+            return res.status(400).json({ error: 'Points array is required' });
+        }
+
+        const storedPoints = [];
+
+        for (const point of points) {
+            const { name, coordinates } = point;
+            
+            if (!name || !coordinates || coordinates.length !== 2) {
+                return res.status(400).json({ error: 'Each point must have a name and valid coordinates [longitude, latitude]' });
+            }
+
+            // Get the maximum id from the graphical_objects table
+            const maxIdQuery = 'SELECT COALESCE(MAX(id), 0) + 1 as next_id FROM graphical_objects';
+            const maxIdResult = await trackPool.query(maxIdQuery);
+            const nextId = maxIdResult.rows[0].next_id;
+
+            // Store the point in the graphical_objects table
+            const storePointQuery = `
+                INSERT INTO graphical_objects (id, name, type, geometry, unit, created_by, created_at, updated_by, updated_at)
+                VALUES ($1, $2, 'Point', ST_SetSRID(ST_MakePoint($3, $4), 4326), 'meters', $5, EXTRACT(EPOCH FROM NOW())::bigint, $5, EXTRACT(EPOCH FROM NOW())::bigint)
+                RETURNING id, name, type, ST_AsText(geometry) as geometry, unit, created_by, created_at, updated_by, updated_at;
+            `;
+
+            // Assuming you have a way to get the current user, otherwise use 'admin_user'
+            const currentUser = req.user ? req.user.username : 'admin_user';
+
+            const result = await trackPool.query(storePointQuery, [nextId, name, coordinates[0], coordinates[1], currentUser]);
+
+            if (result.rows.length === 0) {
+                return res.status(500).json({ error: 'Failed to store point' });
+            }
+
+            storedPoints.push(result.rows[0]);
+        }
+
+        res.status(201).json({
+            message: 'Points stored successfully',
+            points: storedPoints
+        });
+    } catch (err) {
+        console.error('Error storing points:', err);
+        res.status(500).json({ error: 'Server Error', details: err.message });
+    }
+};
+
 module.exports = { 
     storePolygon, 
     getShipsWithinPolygon, 
@@ -332,5 +435,8 @@ module.exports = {
     updatePolygonById,
     deletePolygonById,
     getAllPolygons,
-    getAllGraphicalObjects
+    getAllGraphicalObjects,
+    getAllPoints,
+    getAllCircles,
+    storePoints
 };
