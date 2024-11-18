@@ -72,7 +72,7 @@ const getShipsWithinPolygon = async (req, res) => {
         }
 
         const hours = parseInt(req.query.hours) || 24;
-        const hoursAgo = new Date(Date.now() - hours * 60 * 60 * 1000);
+        const hoursAgo = Date.now() - (hours * 60 * 60 * 1000);
 
         const shipsQuery = `
             SELECT DISTINCT tl.mmsi, tl.track_name, tl.latitude, tl.longitude
@@ -82,7 +82,6 @@ const getShipsWithinPolygon = async (req, res) => {
                 ST_SetSRID(ST_MakePoint(tl.longitude, tl.latitude), 4326)
             )
             AND tl.sensor_timestamp >= $2
-            ORDER BY tl.sensor_timestamp DESC
         `;
 
         const shipsResult = await trackPool.query(shipsQuery, [polygonCoords, hoursAgo]);
@@ -103,7 +102,7 @@ const getShipsWithinCircle = async (req, res) => {
     try {
         const { centerLon, centerLat, radius } = req.query;
         const hours = parseInt(req.query.hours) || 24; // Default to 24 hours
-        const hoursAgo = new Date(Date.now() - hours * 60 * 60 * 1000);
+        const hoursAgo = Date.now() - (hours * 60 * 60 * 1000);
         
         if (!centerLon || !centerLat || !radius) {
             return res.status(400).json({ error: 'Center longitude, latitude, and radius are required' });
@@ -120,7 +119,6 @@ const getShipsWithinCircle = async (req, res) => {
                 $3
             )
             AND tl.sensor_timestamp >= $4
-            ORDER BY tl.sensor_timestamp DESC
         `;
 
         const result = await trackPool.query(query, [centerLon, centerLat, radius, hoursAgo]);
@@ -140,7 +138,7 @@ const getShipsNearPoint = async (req, res) => {
     try {
         const { longitude, latitude, distance } = req.query;
         const hours = parseInt(req.query.hours) || 24; // Default to 24 hours
-        const hoursAgo = new Date(Date.now() - hours * 60 * 60 * 1000);
+        const hoursAgo = Date.now() - (hours * 60 * 60 * 1000);
         
         if (!longitude || !latitude || !distance) {
             return res.status(400).json({ error: 'Longitude, latitude, and distance are required' });
@@ -157,7 +155,6 @@ const getShipsNearPoint = async (req, res) => {
                 $3
             )
             AND tl.sensor_timestamp >= $4
-            ORDER BY tl.sensor_timestamp DESC
         `;
 
         const result = await trackPool.query(query, [longitude, latitude, distance, hoursAgo]);
@@ -178,7 +175,7 @@ const getShipsAlongLine = async (req, res) => {
     try {
         const { lineCoords, distance } = req.query;
         const hours = parseInt(req.query.hours) || 24; // Default to 24 hours
-        const hoursAgo = new Date(Date.now() - hours * 60 * 60 * 1000);
+        const hoursAgo = Date.now() - (hours * 60 * 60 * 1000);
         
         if (!lineCoords || !distance) {
             return res.status(400).json({ error: 'Line coordinates and distance are required' });
@@ -195,7 +192,6 @@ const getShipsAlongLine = async (req, res) => {
                 $2
             )
             AND tl.sensor_timestamp >= $3
-            ORDER BY tl.sensor_timestamp DESC
         `;
 
         const result = await trackPool.query(query, [lineCoords, distance, hoursAgo]);
