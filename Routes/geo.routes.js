@@ -13,7 +13,10 @@ const {
     getAllGraphicalObjects,
     getAllPoints,
     getAllCircles,
-    storePoints
+    storePoints,
+    deleteMultiplePolygons,
+    deletePointById,
+    deleteMultiplePoints,
 } = require('../Controller/Storing_shapes.controller.js')
 const router = express.Router();
 
@@ -373,5 +376,80 @@ router.get('/circles', getAllCircles);
  *         description: Server error
  */
 router.post('/store-points', storePoints);
+
+/**
+ * @swagger
+ * /api/region-marking/polygons:
+ *   delete:
+ *     summary: Delete multiple polygons by IDs
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               ids:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *     responses:
+ *       200:
+ *         description: Successful deletion
+ *       404:
+ *         description: One or more polygons not found
+ *       500:
+ *         description: Server error
+ */
+router.delete('/polygons', deleteMultiplePolygons);
+
+/**
+ * @swagger
+ * /api/region-marking/point/{id}:
+ *   delete:
+ *     summary: Delete point by ID
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Point deleted successfully
+ *       404:
+ *         description: Point not found
+ *       500:
+ *         description: Server error
+ */
+router.delete('/point/:id', deletePointById);
+
+/**
+ * @swagger
+ * /api/region-marking/points:
+ *   delete:
+ *     summary: Delete multiple points by IDs
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               ids:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *     responses:
+ *       200:
+ *         description: Points deleted successfully
+ *       404:
+ *         description: One or more points not found
+ *       500:
+ *         description: Server error
+ */
+router.delete('/points', deleteMultiplePoints);
+
+
 
 module.exports = router;

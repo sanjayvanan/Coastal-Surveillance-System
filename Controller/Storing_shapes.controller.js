@@ -441,6 +441,98 @@ const storePoints = async (req, res) => {
     }
 };
 
+const deleteMultiplePolygons = async (req, res) => {
+    try {
+        const { ids } = req.body;
+        
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ error: 'Array of polygon IDs is required' });
+        }
+
+        const query = `
+            DELETE FROM graphical_objects
+            WHERE id = ANY($1::int[]) AND type = 'Polygon'
+            RETURNING id;
+        `;
+
+        const result = await trackPool.query(query, [ids]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'No polygons found for the provided IDs' });
+        }
+
+        const deletedIds = result.rows.map(row => row.id);
+
+        res.status(200).json({
+            message: 'Polygons deleted successfully',
+            deletedIds: deletedIds
+        });
+    } catch (err) {
+        console.error('Error deleting polygons:', err);
+        res.status(500).json({ error: 'Server Error', details: err.message });
+    }
+};
+
+// Delete a point by ID
+const deletePointById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        const query = `
+            DELETE FROM graphical_objects
+            WHERE id = $1 AND type = 'Point'
+            RETURNING id;
+        `;
+
+        const result = await trackPool.query(query, [id]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Point not found' });
+        }
+
+        res.status(200).json({
+            message: 'Point deleted successfully',
+            deletedId: result.rows[0].id
+        });
+    } catch (err) {
+        console.error('Error deleting point:', err);
+        res.status(500).json({ error: 'Server Error', details: err.message });
+    }
+};
+
+// Delete multiple points
+const deleteMultiplePoints = async (req, res) => {
+    try {
+        const { ids } = req.body;
+        
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ error: 'Array of point IDs is required' });
+        }
+
+        const query = `
+            DELETE FROM graphical_objects
+            WHERE id = ANY($1) AND type = 'Point'
+            RETURNING id;
+        `;
+
+        const result = await trackPool.query(query, [ids]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'No points found for the provided IDs' });
+        }
+
+        const deletedIds = result.rows.map(row => row.id);
+
+        res.status(200).json({
+            message: 'Points deleted successfully',
+            deletedIds: deletedIds
+        });
+    } catch (err) {
+        console.error('Error deleting points:', err);
+        res.status(500).json({ error: 'Server Error', details: err.message });
+    }
+};
+
 module.exports = { 
     storePolygon, 
     getShipsWithinPolygon, 
@@ -454,5 +546,8 @@ module.exports = {
     getAllGraphicalObjects,
     getAllPoints,
     getAllCircles,
-    storePoints
+    storePoints,
+    deleteMultiplePolygons,
+    deletePointById,
+    deleteMultiplePoints
 };

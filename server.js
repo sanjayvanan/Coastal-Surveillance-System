@@ -4,6 +4,7 @@ const shipsRouter = require('./Routes/ships.routes.js');
 const geoRouter = require('./Routes/geo.routes.js');     
 const swaggerUI = require('swagger-ui-express');
 const swaggerJsDoc = require("swagger-jsdoc");
+const authRouter = require('./Routes/Auth.routes.js');
 
 const app = express();
 const port = 3000;
@@ -33,6 +34,7 @@ app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerDocs));
 app.use(bodyParser.json());
 
 // Use routers
+app.use('/api/auth', authRouter);
 app.use('/api/ships', shipsRouter);
 app.use('/api/region-marking/', geoRouter);
 
