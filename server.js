@@ -27,6 +27,8 @@ const swaggerOptions = {
   apis: ['./Routes/*.js'], // This should include your ships.routes.js file
 };
 
+
+
 const swaggerDocs = swaggerJsDoc(swaggerOptions);
 app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerDocs));
 

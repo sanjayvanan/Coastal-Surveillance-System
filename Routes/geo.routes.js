@@ -17,6 +17,18 @@ const {
     deleteMultiplePolygons,
     deletePointById,
     deleteMultiplePoints,
+    storeLine,
+    getShipsCrossingLine,
+    deleteLineById,
+    updateLineById,
+    getLineById,
+    getAllLines,
+    deleteMultipleLines,
+    updatePointById,
+    storeSquare,
+    getSquareById,
+    updateSquareById,
+    deleteSquareById
 } = require('../Controller/Storing_shapes.controller.js')
 const router = express.Router();
 
@@ -450,6 +462,411 @@ router.delete('/point/:id', deletePointById);
  */
 router.delete('/points', deleteMultiplePoints);
 
+/**
+ * @swagger
+ * /api/region-marking/store-line:
+ *   post:
+ *     summary: Store a monitoring line
+ *     tags: [Lines]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - coordinates
+ *             properties:
+ *               name:
+ *                 type: string
+ *               coordinates:
+ *                 type: array
+ *                 items:
+ *                   type: array
+ *                   items:
+ *                     type: number
+ *                 minItems: 2
+ *                 maxItems: 2
+ *     responses:
+ *       201:
+ *         description: Line stored successfully
+ */
+router.post('/store-line', storeLine);
 
+/**
+ * @swagger
+ * /api/region-marking/ships-crossing-line/{lineId}:
+ *   get:
+ *     summary: Get ships crossing a specific line
+ *     tags: [Lines]
+ *     parameters:
+ *       - in: path
+ *         name: lineId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: timeWindow
+ *         schema:
+ *           type: integer
+ *         description: Time window in minutes (default 60)
+ *     responses:
+ *       200:
+ *         description: List of ships crossing the line
+ */
+router.get('/ships-crossing-line/:lineId', getShipsCrossingLine);
+
+/**
+ * @swagger
+ * /api/region-marking/line/{id}:
+ *   delete:
+ *     summary: Delete a single line by ID
+ *     tags: [Lines]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: The line ID to delete
+ *     responses:
+ *       200:
+ *         description: Line deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 deleted:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                     name:
+ *                       type: string
+ *       404:
+ *         description: Line not found
+ *       500:
+ *         description: Server error
+ */
+router.delete('/line/:id', deleteLineById);
+
+/**
+ * @swagger
+ * /api/region-marking/lines:
+ *   delete:
+ *     summary: Delete multiple lines
+ *     tags: [Lines]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - ids
+ *             properties:
+ *               ids:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *     responses:
+ *       200:
+ *         description: Lines deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 deletedCount:
+ *                   type: integer
+ *                 deletedLines:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                       name:
+ *                         type: string
+ *       400:
+ *         description: Invalid input
+ *       404:
+ *         description: Lines not found
+ *       500:
+ *         description: Server error
+ */
+router.delete('/lines', deleteMultipleLines);
+
+/**
+ * @swagger
+ * /api/region-marking/line/{id}:
+ *   put:
+ *     summary: Update line by ID
+ *     tags: [Lines]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               coordinates:
+ *                 type: array
+ *                 items:
+ *                   type: array
+ *                   items:
+ *                     type: number
+ *                 minItems: 2
+ *                 maxItems: 2
+ *     responses:
+ *       200:
+ *         description: Line updated successfully
+ */
+router.put('/line/:id', updateLineById);
+
+/**
+ * @swagger
+ * /api/region-marking/line/{id}:
+ *   get:
+ *     summary: Get a line by ID
+ *     tags: [Lines]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: The line ID
+ *     responses:
+ *       200:
+ *         description: Line details retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: integer
+ *                 name:
+ *                   type: string
+ *                 type:
+ *                   type: string
+ *                 coordinates:
+ *                   type: array
+ *                   items:
+ *                     type: array
+ *                     items:
+ *                       type: number
+ *                 metadata:
+ *                   type: object
+ *                   properties:
+ *                     unit:
+ *                       type: string
+ *                     created_by:
+ *                       type: string
+ *                     created_at:
+ *                       type: string
+ *                       format: date-time
+ *                     updated_by:
+ *                       type: string
+ *                     updated_at:
+ *                       type: string
+ *                       format: date-time
+ *                 length:
+ *                   type: object
+ *                   properties:
+ *                     kilometers:
+ *                       type: string
+ *       404:
+ *         description: Line not found
+ *       500:
+ *         description: Server error
+ */
+router.get('/line/:id', getLineById);
+
+/**
+ * @swagger
+ * /api/region-marking/lines:
+ *   get:
+ *     summary: Get all monitoring lines
+ *     tags: [Lines]
+ *     responses:
+ *       200:
+ *         description: List of all lines
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 count:
+ *                   type: integer
+ *                 lines:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                       name:
+ *                         type: string
+ *                       type:
+ *                         type: string
+ *                       coordinates:
+ *                         type: array
+ *                         items:
+ *                           type: array
+ *                           items:
+ *                             type: number
+ *                       metadata:
+ *                         type: object
+ *                         properties:
+ *                           unit:
+ *                             type: string
+ *                           created_by:
+ *                             type: string
+ *                           created_at:
+ *                             type: string
+ *                             format: date-time
+ *                           updated_by:
+ *                             type: string
+ *                           updated_at:
+ *                             type: string
+ *                             format: date-time
+ *                       length:
+ *                         type: object
+ *                         properties:
+ *                           kilometers:
+ *                             type: string
+ *       500:
+ *         description: Server error
+ */
+router.get('/lines', getAllLines);
+
+/**
+ * @swagger
+ * /api/region-marking/point/{id}:
+ *   put:
+ *     summary: Update point by ID
+ *     tags: [Points]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - coordinates
+ *             properties:
+ *               name:
+ *                 type: string
+ *               coordinates:
+ *                 type: array
+ *                 items:
+ *                   type: number
+ *                 minItems: 2
+ *                 maxItems: 2
+ *     responses:
+ *       200:
+ *         description: Point updated successfully
+ *       404:
+ *         description: Point not found
+ */
+router.put('/point/:id', updatePointById);
+
+/**
+ * @swagger
+ * /api/region-marking/square:
+ *   post:
+ *     summary: Store a new square
+ *     tags: [Squares]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - coordinates
+ *             properties:
+ *               name:
+ *                 type: string
+ *               coordinates:
+ *                 type: array
+ *                 items:
+ *                   type: array
+ *                   items:
+ *                     type: number
+ *                 minItems: 4
+ *                 maxItems: 4
+ */
+router.post('/square', storeSquare);
+
+/**
+ * @swagger
+ * /api/region-marking/square/{id}:
+ *   get:
+ *     summary: Get a square by ID
+ *     tags: [Squares]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ */
+router.get('/square/:id', getSquareById);
+
+/**
+ * @swagger
+ * /api/region-marking/square/{id}:
+ *   put:
+ *     summary: Update a square by ID
+ *     tags: [Squares]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ */
+router.put('/square/:id', updateSquareById);
+
+/**
+ * @swagger
+ * /api/region-marking/square/{id}:
+ *   delete:
+ *     summary: Delete a square by ID
+ *     tags: [Squares]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ */
+router.delete('/square/:id', deleteSquareById);
 
 module.exports = router;
