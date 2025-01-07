@@ -10,6 +10,9 @@ const pool = new Pool({
     port: 5432,
 });
 
+// Add this at the top of the file to track ship states
+const shipStatesInPolygons = new Map(); // Format: 'shipId_polygonId' => boolean
+
 // Helper function to remove unwanted fields
 const removeUnwantedFields = (obj) => {
     const { created_at, created_by, updated_at, updated_by, ...rest } = obj;
@@ -536,8 +539,113 @@ const getAllTrackNavStatuses = async (req, res) => {
     }
 };
 
+// Add this new function to handle intrusion detection
+const checkShipIntrusion = async (req, res) => {
+    // Add debug logging at the start
+    console.log("Received request body:", JSON.stringify(req.body, null, 2));
+    
+    const { shipId, latitude, longitude, enabledPolygonIds, polygonTypes } = req.body;
+    
+    // Validate required fields and polygonTypes
+    if (!polygonTypes || typeof polygonTypes !== 'object') {
+        console.warn("polygonTypes is missing or invalid, using default Warning type");
+        req.body.polygonTypes = {};  // Initialize as empty object if undefined
+    }
+    
+    try {
+        // Fetch ship data
+        const result = await pool.query(
+            `SELECT 
+                tl.uuid,
+                tl.mmsi,
+                COALESCE(vd.vessel_name, tl.track_name) as ship_name
+             FROM track_list tl
+             LEFT JOIN track_voyage_data vd ON tl.uuid = vd.track_table__uuid
+             WHERE tl.uuid = $1`,
+            [shipId]
+        );
 
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: "Ship not found" });
+        }
 
+        const shipDetails = result.rows[0];
+        const shipName = shipDetails.ship_name || 'Unknown';
+        
+        // Simplified polygon query
+        const polygonQuery = `
+            SELECT id as polygon_id, name, type, ST_AsText(geometry) as geometry
+            FROM graphical_objects 
+            WHERE id = ANY($1::int[]) AND type = 'Polygon'`;
 
+        const polygonResult = await pool.query(polygonQuery, [enabledPolygonIds]);
 
-module.exports = {getAll, Get_using_MMSI, Get_using_UUID, getBoth_MMSI_ISO, GetIMO, get_By_name, getByCallSign, fetchByTime, getShipTrackHistory, getAllMessageTypes, getAllTrackTypes, getAllTrackNavStatuses, trackList}
+        // Check each enabled polygon
+        for (const polygon of polygonResult.rows) {
+            const stateKey = `${shipId}_${polygon.polygon_id}`;
+            // Safely access polygonTypes with fallback
+            const alertType = (req.body.polygonTypes && req.body.polygonTypes[polygon.polygon_id]) 
+                ? req.body.polygonTypes[polygon.polygon_id] 
+                : 'Warning';
+            
+            // Check if ship is inside polygon
+            const isInsideResult = await pool.query(
+                `SELECT ST_Contains(
+                    geometry,
+                    ST_SetSRID(ST_MakePoint($1, $2), 4326)
+                ) as is_inside
+                FROM graphical_objects 
+                WHERE id = $3`,
+                [longitude, latitude, polygon.polygon_id]
+            );
+
+            if (isInsideResult.rows.length === 0) continue;
+
+            const is_inside = isInsideResult.rows[0].is_inside;
+            const previousState = shipStatesInPolygons.get(stateKey);
+            
+            // Handle state changes with safe alertType access
+            if (is_inside && previousState === false) {
+                console.log(`\n=== INTRUSION DETECTED ===`);
+                console.log(`Time: ${new Date().toISOString()}`);
+                console.log(`Ship: ${shipName} (UUID: ${shipDetails.uuid}, MMSI: ${shipDetails.mmsi})`);
+                console.log(`Entered polygon: ${polygon.name} (ID: ${polygon.polygon_id})`);
+                console.log(`Alert Type: ${alertType}`);
+                console.log(`Position: ${latitude}, ${longitude}`);
+                console.log(`========================\n`);
+                shipStatesInPolygons.set(stateKey, true);
+            } 
+            else if (!is_inside && previousState === true) {
+                console.log(`\n=== EXIT DETECTED ===`);
+                console.log(`Time: ${new Date().toISOString()}`);
+                console.log(`Ship: ${shipName} (UUID: ${shipDetails.uuid}, MMSI: ${shipDetails.mmsi})`);
+                console.log(`Exited polygon: ${polygon.name} (ID: ${polygon.polygon_id})`);
+                console.log(`Position: ${latitude}, ${longitude}`);
+                console.log(`========================\n`);
+                shipStatesInPolygons.set(stateKey, false);
+            }
+            else {
+                // Update state even if no change
+                shipStatesInPolygons.set(stateKey, is_inside);
+            }
+        }
+
+        res.json({ 
+            success: true,
+            message: "Intrusion check completed"
+        });
+        
+    } catch (err) {
+        console.error('Error checking ship intrusion:', err);
+        console.error('Request data:', {
+            shipId,
+            latitude,
+            longitude,
+            enabledPolygonIds,
+            polygonTypes: req.body.polygonTypes
+        });
+        res.status(500).json({ error: err.message });
+    }
+};
+
+module.exports = {getAll, Get_using_MMSI, Get_using_UUID, getBoth_MMSI_ISO, GetIMO, get_By_name, getByCallSign, fetchByTime, getShipTrackHistory, getAllMessageTypes, getAllTrackTypes, getAllTrackNavStatuses, trackList, checkShipIntrusion}

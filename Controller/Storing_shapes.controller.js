@@ -65,7 +65,7 @@ const storePolygon = async (req, res) => {
 //get all the ships within a polygon
 const getShipsWithinPolygon = async (req, res) => {
     try {
-        const { polygonCoords } = req.query;
+        const  polygonCoords  = req.query.polygonCoords;
         
         if (!polygonCoords) {
             return res.status(400).json({ error: 'Polygon coordinates are required' });

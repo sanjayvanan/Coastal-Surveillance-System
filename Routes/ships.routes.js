@@ -13,6 +13,7 @@ const {
   getAllMessageTypes,
   getAllTrackTypes,
   getAllTrackNavStatuses,
+  checkShipIntrusion,
 } = require("../Controller/ships.controller.js");
 
 const router = express.Router();
@@ -225,4 +226,33 @@ router.get("/Message-Types",getAllMessageTypes)
 router.get("/TrackTypes", getAllTrackTypes)
 router.get("/TrackNavStatuses", getAllTrackNavStatuses)
 router.get("/trackList",  trackList)
+
+/**
+ * @swagger
+ * /api/ships/check-intrusion:
+ *   post:
+ *     summary: Check ship intrusion
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               shipId:
+ *                 type: string
+ *               latitude:
+ *                 type: number
+ *               longitude:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: Successful response
+ *       400:
+ *         description: Invalid request
+ *       500:
+ *         description: Server error
+ */
+router.post('/check-intrusion', checkShipIntrusion);
+
 module.exports = router;
