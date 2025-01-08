@@ -13,6 +13,7 @@ const UserRoute = require('./Routes/UserRoute')
 const SettingsRoute = require('./Routes/SettingsRoute')
 const SettingsModel = require('./Model/SettingsSchema')
 const WatchlistRoute = require('./Routes/WatchlistRoute')
+const notificationRoutes = require('./routes/notificationRoutes');
 const cookieParser = require('cookie-parser');
 const { verifyToken, SECRET_KEY } = require('./middleware/auth');
 
@@ -64,6 +65,7 @@ app.use('/watchlist',WatchlistRoute)
 // Use routers
 app.use('/api/ships', shipsRouter);
 app.use('/api/region-marking/', geoRouter);
+app.use('/api', notificationRoutes);
 
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
