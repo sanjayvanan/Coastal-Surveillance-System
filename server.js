@@ -50,7 +50,8 @@ app.use(bodyParser.json());
 app.use(cookieParser());
 
 // MongoDB connection
-mongoose.connect('mongodb://localhost:27017/QT_map', {
+//mongodb+srv://zosh:zosh@zoshcpn.q40rq.mongodb.net/  
+mongoose.connect('mongodb+srv://zosh:zosh@zoshcpn.q40rq.mongodb.net/QT_Map', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
