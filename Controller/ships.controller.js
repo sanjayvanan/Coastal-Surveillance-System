@@ -154,6 +154,71 @@ const Get_using_MMSI = async (req, res) => {
     }
 };
 
+const Get_track_replay = async(req, res) => {
+    const { mmsi, startTime, endTime } = req.body;
+    
+    try {
+        const result = await pool.query(
+            `WITH target_tracks AS (
+                SELECT uuid, mmsi 
+                FROM track_list 
+                WHERE mmsi = ANY($1)
+            )
+            SELECT 
+                tt.mmsi,
+                th.track__uuid,
+                th.latitude,
+                th.longitude,
+                th.height_depth,
+                th.speed_over_ground,
+                th.course_over_ground,
+                th.true_heading,
+                th.rate_of_turn,
+                th.sensor_timestamp
+            FROM track_history th
+            INNER JOIN target_tracks tt ON th.track__uuid = tt.uuid
+            WHERE th.sensor_timestamp BETWEEN $2 AND $3
+            ORDER BY tt.mmsi, th.sensor_timestamp;`,
+            [mmsi, startTime, endTime]
+        );
+
+        // Group results by MMSI
+        const groupedResults = result.rows.reduce((acc, row) => {
+            const mmsi = row.mmsi;
+            
+            // Create array for this MMSI if it doesn't exist
+            if (!acc[mmsi]) {
+                acc[mmsi] = [];
+            }
+
+            // Add the row data without the MMSI field
+            const rowWithoutMmsi = {
+                track__uuid: row.track__uuid,
+                latitude: row.latitude,
+                longitude: row.longitude,
+                height_depth: row.height_depth,
+                speed_over_ground: row.speed_over_ground,
+                course_over_ground: row.course_over_ground,
+                true_heading: row.true_heading,
+                rate_of_turn: row.rate_of_turn,
+                sensor_timestamp: row.sensor_timestamp
+            };
+            
+            acc[mmsi].push(rowWithoutMmsi);
+            return acc;
+        }, {});
+
+        res.json(groupedResults);
+
+    } catch(err) {
+        console.error('Error in Get_track_replay:', err);
+        res.status(500).json({
+            error: 'Server Error',
+            message: err.message
+        });
+    }
+};
+
 //Get the ship data using ISO and MMSI number
 const getBoth_MMSI_ISO =  async (req, res) => {
     const { mmsi, imo } = req.params;
@@ -326,76 +391,6 @@ const trackList = async (req, res) => {
 };
 
 
-// Helper function to calculate perpendicular distance
-function perpendicularDistance(point, lineStart, lineEnd) {
-    const [x, y] = [point.longitude, point.latitude];
-    const [x1, y1] = [lineStart.longitude, lineStart.latitude];
-    const [x2, y2] = [lineEnd.longitude, lineEnd.latitude];
-
-    const A = x - x1;
-    const B = y - y1;
-    const C = x2 - x1;
-    const D = y2 - y1;
-
-    const dot = A * C + B * D;
-    const len_sq = C * C + D * D;
-    const param = dot / len_sq;
-
-    let xx, yy;
-
-    if (param < 0) {
-        xx = x1;
-        yy = y1;
-    } else if (param > 1) {
-        xx = x2;
-        yy = y2;
-    } else {
-        xx = x1 + param * C;
-        yy = y1 + param * D;
-    }
-
-    const dx = x - xx;
-    const dy = y - yy;
-
-    return Math.sqrt(dx * dx + dy * dy);
-}
-
-// Recursive function to simplify line
-function simplifyLine(points, epsilon, result, start, end) {
-    if (end - start < 2) {
-        return;
-    }
-
-    let maxDistance = 0;
-    let indexFarthest = start;
-
-    for (let i = start + 1; i < end; i++) {
-        const distance = perpendicularDistance(points[i], points[start], points[end]);
-        if (distance > maxDistance) {
-            maxDistance = distance;
-            indexFarthest = i;
-        }
-    }
-
-    if (maxDistance > epsilon) {
-        simplifyLine(points, epsilon, result, start, indexFarthest);
-        result.push(points[indexFarthest]);
-        simplifyLine(points, epsilon, result, indexFarthest, end);
-    }
-}
-
-// Main function to optimize line
-function optimizeLine(points, epsilon) {
-    if (points.length < 3) {
-        return points;
-    }
-
-    const result = [points[0]];
-    simplifyLine(points, epsilon, result, 0, points.length - 1);
-    result.push(points[points.length - 1]);
-
-    return result;
-}
 
 // Function to get ship track history by UUID
 const getShipTrackHistory = async (req, res) => {
@@ -442,9 +437,9 @@ const getShipTrackHistory = async (req, res) => {
                     originalIndex: result.rows.indexOf(row)
                 }));
 
-                // Simplify the track
+                // Apply Douglas-Peucker algorithm
                 const epsilon = 0.0004; // Adjust this value as needed
-                const simplifiedPoints = optimizeLine(points, epsilon);
+                const simplifiedPoints = douglasPeucker(points, epsilon);
 
                 // Create simplified track history
                 trackHistory = simplifiedPoints.map(point => {
@@ -483,6 +478,45 @@ const getShipTrackHistory = async (req, res) => {
     }
 };
 
+// Helper function to calculate perpendicular distance
+function perpendicularDistance(point, start, end) {
+    const [x, y] = [point.longitude, point.latitude];
+    const [x1, y1] = [start.longitude, start.latitude];
+    const [x2, y2] = [end.longitude, end.latitude];
+
+    const numerator = Math.abs((y2 - y1) * x - (x2 - x1) * y + x2 * y1 - y2 * x1);
+    const denominator = Math.sqrt((y2 - y1) ** 2 + (x2 - x1) ** 2);
+
+    return numerator / denominator;
+}
+
+// Recursive Douglas-Peucker algorithm implementation
+function douglasPeucker(points, epsilon) {
+    if (points.length <= 2) {
+        return points;
+    }
+
+    let maxDistance = 0;
+    let maxIndex = 0;
+    const start = points[0];
+    const end = points[points.length - 1];
+
+    for (let i = 1; i < points.length - 1; i++) {
+        const distance = perpendicularDistance(points[i], start, end);
+        if (distance > maxDistance) {
+            maxDistance = distance;
+            maxIndex = i;
+        }
+    }
+
+    if (maxDistance > epsilon) {
+        const left = douglasPeucker(points.slice(0, maxIndex + 1), epsilon);
+        const right = douglasPeucker(points.slice(maxIndex), epsilon);
+        return [...left.slice(0, -1), ...right];
+    } else {
+        return [start, end];
+    }
+}
 
 //mesaage_types 
 const getAllMessageTypes = async (req, res) => {
@@ -648,4 +682,4 @@ const checkShipIntrusion = async (req, res) => {
     }
 };
 
-module.exports = {getAll, Get_using_MMSI, Get_using_UUID, getBoth_MMSI_ISO, GetIMO, get_By_name, getByCallSign, fetchByTime, getShipTrackHistory, getAllMessageTypes, getAllTrackTypes, getAllTrackNavStatuses, trackList, checkShipIntrusion}
+module.exports = {getAll, Get_using_MMSI, Get_track_replay, Get_using_UUID, getBoth_MMSI_ISO, GetIMO, get_By_name, getByCallSign, fetchByTime, getShipTrackHistory, getAllMessageTypes, getAllTrackTypes, getAllTrackNavStatuses, trackList, checkShipIntrusion}

@@ -14,6 +14,7 @@ const {
   getAllTrackTypes,
   getAllTrackNavStatuses,
   checkShipIntrusion,
+  Get_track_replay
 } = require("../Controller/ships.controller.js");
 
 const router = express.Router();
@@ -254,5 +255,107 @@ router.get("/trackList",  trackList)
  *         description: Server error
  */
 router.post('/check-intrusion', checkShipIntrusion);
+
+
+
+/**
+ * @swagger
+ * /api/ships/get-track-replay:
+ *   post:
+ *     summary: Get track replay data for multiple MMSIs
+ *     description: Retrieves historical track data grouped by MMSI within a specified time range
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               mmsi:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: Array of MMSI numbers
+ *                 example: ["412094702", "412112637"]
+ *               startTime:
+ *                 type: integer
+ *                 format: int64
+ *                 description: Start timestamp in milliseconds
+ *                 example: 1736241175227
+ *               endTime:
+ *                 type: integer
+ *                 format: int64
+ *                 description: End timestamp in milliseconds
+ *                 example: 1736244175227
+ *     responses:
+ *       200:
+ *         description: Successfully retrieved track replay data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               additionalProperties:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     track__uuid:
+ *                       type: string
+ *                     latitude:
+ *                       type: number
+ *                     longitude:
+ *                       type: number
+ *                     height_depth:
+ *                       type: number
+ *                     speed_over_ground:
+ *                       type: number
+ *                     course_over_ground:
+ *                       type: number
+ *                     true_heading:
+ *                       type: number
+ *                     rate_of_turn:
+ *                       type: number
+ *                     sensor_timestamp:
+ *                       type: integer
+ *                       format: int64
+ *             example:
+ *               "412094702": [
+ *                 {
+ *                   "track__uuid": "123e4567-e89b-12d3-a456-426614174000",
+ *                   "latitude": 12.345,
+ *                   "longitude": 98.765,
+ *                   "height_depth": 10.5,
+ *                   "speed_over_ground": 15.2,
+ *                   "course_over_ground": 180.0,
+ *                   "true_heading": 182.5,
+ *                   "rate_of_turn": 0.5,
+ *                   "sensor_timestamp": 1736241175227
+ *                 }
+ *               ]
+ *       400:
+ *         description: Invalid request parameters
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Invalid MMSI array or time range"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Server Error"
+ *                 message:
+ *                   type: string
+ *                   example: "Database connection error"
+ */
+router.post('/get-track-replay', Get_track_replay);
 
 module.exports = router;

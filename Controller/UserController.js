@@ -497,8 +497,14 @@ const AdminCreateUser = async (req, res) => {
     }
 }
 
+// Health check endpoint
+const healthCheck = async(req, res) => {
+    res.status(200).json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      ack: true
+    });
+}
 
 
-
-
-module.exports = {ValidateUser, signup , Protect, getUsers, DeleteUsers, UpdateUserName, UpdatePassword, AdminCreateUser, SALT_ROUNDS}
+module.exports = {ValidateUser, signup , Protect, getUsers, DeleteUsers, UpdateUserName, UpdatePassword, AdminCreateUser, SALT_ROUNDS, healthCheck}
