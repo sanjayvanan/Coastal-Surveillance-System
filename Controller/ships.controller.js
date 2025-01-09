@@ -646,7 +646,7 @@ const checkShipIntrusion = async (req, res) => {
                 console.log(`Entered polygon: ${polygon.name} (ID: ${polygon.polygon_id})`);
                 console.log(`Alert Type: ${alertType}`);
                 console.log(`Position: ${latitude}, ${longitude}`);
-                console.log(`========================\n`);
+                console.log(`=======================\n`);
                 shipStatesInPolygons.set(stateKey, true);
             } 
             else if (!is_inside && previousState === true) {
