@@ -1,0 +1,36 @@
+<svg width="500" height="100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Main body -->
+  <rect x="10" y="20" width="300" height="60" fill="black" rx="15" />
+  
+  <!-- Left gray square -->
+  <rect x="10" y="20" width="60" height="60" fill="lightgray" />
+
+  <!-- Grid pattern -->
+  <g fill="white">
+    <!-- First row of rectangles -->
+    <rect x="80" y="25" width="30" height="20" />
+    <rect x="120" y="25" width="30" height="20" />
+    <rect x="160" y="25" width="30" height="20" />
+    <rect x="200" y="25" width="30" height="20" />
+    <rect x="240" y="25" width="30" height="20" />
+    <rect x="280" y="25" width="30" height="20" />
+    
+    <!-- Second row of rectangles -->
+    <rect x="80" y="50" width="30" height="20" />
+    <rect x="120" y="50" width="30" height="20" />
+    <rect x="160" y="50" width="30" height="20" />
+    <rect x="200" y="50" width="30" height="20" />
+    <rect x="240" y="50" width="30" height="20" />
+    <rect x="280" y="50" width="30" height="20" />
+  </g>
+  
+  <!-- Front part of ship -->
+  <g fill="white">
+    <rect x="330" y="35" width="30" height="30" />
+    <rect x="370" y="35" width="30" height="30" />
+    <rect x="410" y="35" width="30" height="30" />
+  </g>
+  
+  <!-- Boat tip (triangular path) -->
+  <polygon points="450,20 490,50 450,80" fill="black"/>
+</svg>
