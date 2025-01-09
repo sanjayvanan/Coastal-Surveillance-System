@@ -638,8 +638,8 @@ const checkShipIntrusion = async (req, res) => {
             const is_inside = isInsideResult.rows[0].is_inside;
             const previousState = shipStatesInPolygons.get(stateKey);
             
-            // Handle state changes with safe alertType access
-            if (is_inside && previousState === false) {
+            // Handle state changes
+           if (is_inside && previousState === false) {
                 console.log(`\n=== INTRUSION DETECTED ===`);
                 console.log(`Time: ${new Date().toISOString()}`);
                 console.log(`Ship: ${shipName} (UUID: ${shipDetails.uuid}, MMSI: ${shipDetails.mmsi})`);

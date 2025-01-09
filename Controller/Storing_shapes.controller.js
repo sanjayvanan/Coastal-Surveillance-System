@@ -21,6 +21,10 @@ const trackPool = new Pool({
     port: 5432,
 });
 
+const enabledPolygons = new Map(); // Store polygon ID -> type mapping
+const INTRUSION_CHECK_INTERVAL = 60000; // 1 minute in milliseconds
+const shipStates = new Map(); // Track ship states: Map<polygonId_shipId, boolean>
+
 const storePolygon = async (req, res) => {
     try {
         const { polygonCoords, polygonName } = req.body;
@@ -1313,6 +1317,250 @@ const deleteSquareById = async (req, res) => {
     }
 };
 
+// Add this function to convert ISO date to Unix timestamp
+const toUnixTimestamp = (date) => Math.floor(date.getTime() / 1000);
+
+// Modify the checkIntrusionsForAllEnabledPolygons function
+const checkIntrusionsForAllEnabledPolygons = async () => {
+    if (enabledPolygons.size === 0) return;
+
+    try {
+        const currentTime = new Date();
+        console.log(`\n=== Checking intrusions at ${currentTime.toISOString()} ===`);
+
+        const polygonIds = Array.from(enabledPolygons.keys());
+        
+        // Main query for ships in polygons
+        const query = `
+            SELECT 
+                tl.uuid,
+                tl.mmsi,
+                tl.track_name,
+                tl.latitude,
+                tl.longitude,
+                go.id as polygon_id,
+                go.name as polygon_name
+            FROM track_list tl
+            CROSS JOIN (
+                SELECT id, name, geometry 
+                FROM graphical_objects 
+                WHERE id = ANY($1::integer[])
+            ) go
+            WHERE ST_Contains(
+                go.geometry,
+                ST_SetSRID(ST_MakePoint(tl.longitude, tl.latitude), 4326)
+            )
+            AND tl.sensor_timestamp >= $2::bigint
+        `;
+
+        const timeWindow = Math.floor(Date.now() / 1000) - (5 * 60);
+        const result = await trackPool.query(query, [polygonIds, timeWindow]);
+
+        const currentShipStates = new Set();
+
+        // Handle entries
+        result.rows.forEach(ship => {
+            const stateKey = `${ship.polygon_id}_${ship.uuid}`;
+            currentShipStates.add(stateKey);
+
+            if (!shipStates.has(stateKey)) {
+                const polygonType = enabledPolygons.get(ship.polygon_id.toString());
+                console.log(`
+                🚨 SHIP ENTERED POLYGON:
+                ----------------------------------------
+                Alert Type: ${polygonType}
+                Polygon: ${ship.polygon_name} (ID: ${ship.polygon_id})
+                Ship Details:
+                  - UUID: ${ship.uuid}
+                  - MMSI: ${ship.mmsi}
+                  - Name: ${ship.track_name || 'Unknown'}
+                  - Position: ${ship.latitude}, ${ship.longitude}
+                ----------------------------------------`);
+                
+                shipStates.set(stateKey, true);
+            }
+        });
+
+        // Handle exits
+        for (const [stateKey, inPolygon] of shipStates.entries()) {
+            if (!currentShipStates.has(stateKey) && inPolygon) {
+                const [polygonId, shipId] = stateKey.split('_');
+
+                // Get polygon details
+                const polygonQuery = `
+                    SELECT name FROM graphical_objects WHERE id = $1;
+                `;
+                const polygonResult = await trackPool.query(polygonQuery, [polygonId]);
+                const polygonName = polygonResult.rows[0]?.name || 'Unknown';
+
+                // Get ship's last known position
+                const shipQuery = `
+                    SELECT uuid, mmsi, track_name, latitude, longitude 
+                    FROM track_list 
+                    WHERE uuid = $1 
+                    ORDER BY sensor_timestamp DESC 
+                    LIMIT 1;
+                `;
+                const shipResult = await trackPool.query(shipQuery, [shipId]);
+                const shipDetails = shipResult.rows[0];
+
+                console.log(`
+                🚫 SHIP EXITED POLYGON:
+                ----------------------------------------
+                Alert Type: ${enabledPolygons.get(polygonId.toString())}
+                Polygon: ${polygonName} (ID: ${polygonId})
+                Ship Details:
+                  - UUID: ${shipId}
+                  - MMSI: ${shipDetails ? shipDetails.mmsi : 'Unknown'}
+                  - Name: ${shipDetails ? shipDetails.track_name || 'Unknown' : 'Unknown'}
+                  - Position: ${shipDetails ? `${shipDetails.latitude}, ${shipDetails.longitude}` : 'Unknown'}
+                ----------------------------------------`);
+                
+                shipStates.delete(stateKey);
+            }
+        }
+
+    } catch (err) {
+        console.error('Error in periodic intrusion check:', err.stack);
+    }
+};
+
+// Modify the updateIntrusionDetection function to better handle polygon types
+const updateIntrusionDetection = async (req, res) => {
+    try {
+        const { polygonIds, polygonTypes } = req.body;
+        
+        console.log('Received update request:', {
+            polygonIds,
+            polygonTypes
+        });
+
+        // Validate input
+        if (!Array.isArray(polygonIds)) {
+            return res.status(400).json({ 
+                error: 'Invalid input', 
+                message: 'polygonIds must be an array' 
+            });
+        }
+
+        // Clear existing enabled polygons
+        enabledPolygons.clear();
+        
+        // Update with new polygon IDs and their types
+        polygonIds.forEach((id, index) => {
+            const type = polygonTypes?.[index] || 'Warning'; // Default to 'Warning' if type not specified
+            enabledPolygons.set(id.toString(), type); // Convert ID to string to ensure consistency
+        });
+
+        console.log('Updated intrusion detection polygons:', 
+            Array.from(enabledPolygons.entries())
+                .map(([id, type]) => `${id}: ${type}`)
+                .join(', ')
+        );
+        
+        // Start the periodic check if not already running
+        if (!global.intrusionCheckInterval) {
+            global.intrusionCheckInterval = setInterval(
+                checkIntrusionsForAllEnabledPolygons, 
+                INTRUSION_CHECK_INTERVAL
+            );
+            console.log('Started intrusion check interval');
+        }
+
+        res.status(200).json({
+            message: 'Intrusion detection settings updated',
+            enabledPolygons: Array.from(enabledPolygons.entries())
+        });
+    } catch (err) {
+        console.error('Error in updateIntrusionDetection:', err);
+        res.status(500).json({ 
+            error: 'Server Error', 
+            details: err.message,
+            stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+        });
+    }
+};
+
+// Add this function to handle individual ship position updates
+const checkShipIntrusion = async (req, res) => {
+    try {
+        const { shipId, latitude, longitude } = req.body;
+        const enabledPolygonIds = Array.from(enabledPolygons.keys());
+
+        if (enabledPolygonIds.length === 0) {
+            return res.json({ shipId, detections: [] });
+        }
+
+        const query = `
+            SELECT id, name 
+            FROM graphical_objects 
+            WHERE id = ANY($1::integer[])
+            AND ST_Contains(
+                geometry,
+                ST_SetSRID(ST_MakePoint($2, $3), 4326)
+            )
+        `;
+        
+        const result = await trackPool.query(query, [enabledPolygonIds, longitude, latitude]);
+        
+        const detections = result.rows.map(row => {
+            const stateKey = `${row.id}_${shipId}`;
+            const wasInPolygon = shipStates.has(stateKey);
+            const type = enabledPolygons.get(row.id.toString());
+
+            // Only mark as detected if this is a new entry
+            if (!wasInPolygon) {
+                shipStates.set(stateKey, true);
+                return {
+                    polygonId: row.id,
+                    type,
+                    detected: true,
+                    name: row.name,
+                    isNewEntry: true
+                };
+            }
+            return null;
+        }).filter(Boolean);
+
+        // Check for exits
+        enabledPolygonIds.forEach(polygonId => {
+            const stateKey = `${polygonId}_${shipId}`;
+            if (shipStates.has(stateKey) && !result.rows.find(row => row.id === polygonId)) {
+                // Ship has exited this polygon
+                console.log(`
+                🚫 SHIP EXITED POLYGON (Real-time):
+                ----------------------------------------
+                Polygon ID: ${polygonId}
+                Ship ID: ${shipId}
+                ----------------------------------------`);
+                shipStates.delete(stateKey);
+            }
+        });
+
+        if (detections.length > 0) {
+            console.log('\n🚨 NEW INTRUSION DETECTED:');
+            detections.forEach(detection => {
+                console.log(`
+                ----------------------------------------
+                Alert Type: ${detection.type}
+                Polygon: ${detection.name} (ID: ${detection.polygonId})
+                Ship ID: ${shipId}
+                Position: ${latitude}, ${longitude}
+                ----------------------------------------`);
+            });
+        }
+
+        res.json({ shipId, detections });
+
+    } catch (err) {
+        console.error('Error in checkShipIntrusion:', err);
+        res.status(500).json({ 
+            error: 'Server Error', 
+            details: err.message 
+        });
+    }
+};
+
 module.exports = { 
     storePolygon, 
     getShipsWithinPolygon, 
@@ -1341,5 +1589,7 @@ module.exports = {
     storeSquare,
     getSquareById,
     updateSquareById,
-    deleteSquareById
+    deleteSquareById,
+    updateIntrusionDetection,
+    checkShipIntrusion
 };

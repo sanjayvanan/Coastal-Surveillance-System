@@ -28,7 +28,9 @@ const {
     storeSquare,
     getSquareById,
     updateSquareById,
-    deleteSquareById
+    deleteSquareById,
+    updateIntrusionDetection,
+    checkShipIntrusion
 } = require('../Controller/Storing_shapes.controller.js')
 const router = express.Router();
 
@@ -868,5 +870,65 @@ router.put('/square/:id', updateSquareById);
  *           type: integer
  */
 router.delete('/square/:id', deleteSquareById);
+
+/**
+ * @swagger
+ * /api/region-marking/update-intrusion-detection:
+ *   post:
+ *     summary: Update intrusion detection settings
+ *     tags: [Intrusion Detection]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               polygonIds:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *               polygonTypes:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       200:
+ *         description: Intrusion detection settings updated
+ */
+router.post('/update-intrusion-detection', updateIntrusionDetection);
+
+/**
+ * @swagger
+ * /api/region-marking/check-intrusion:
+ *   post:
+ *     summary: Check ship intrusion
+ *     tags: [Intrusion Detection]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               shipId:
+ *                 type: integer
+ *               latitude:
+ *                 type: number
+ *               longitude:
+ *                 type: number
+ *               enabledPolygonIds:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *     responses:
+ *       200:
+ *         description: Intrusion check results
+ *       400:
+ *         description: Invalid input
+ *       500:
+ *         description: Server error
+ */
+router.post('/check-intrusion', checkShipIntrusion);
 
 module.exports = router;
