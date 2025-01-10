@@ -1,6 +1,8 @@
 const { Pool } = require('pg');
 const { v4: uuidv4 } = require('uuid');
 const wkx = require('wkx');
+const Notification = require('../model/NotificationSchema');
+
 
 // Connect to the PostgreSQL database
 const pool = new Pool({
@@ -1329,8 +1331,7 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
         console.log(`\n=== Checking intrusions at ${currentTime.toISOString()} ===`);
 
         const polygonIds = Array.from(enabledPolygons.keys());
-        
-        // Main query for ships in polygons
+
         const query = `
             SELECT 
                 tl.uuid,
@@ -1338,6 +1339,7 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
                 tl.track_name,
                 tl.latitude,
                 tl.longitude,
+                tl.sensor_timestamp,
                 go.id as polygon_id,
                 go.name as polygon_name
             FROM track_list tl
@@ -1358,64 +1360,83 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
 
         const currentShipStates = new Set();
 
-        // Handle entries
-        result.rows.forEach(ship => {
+        // Handle ship entries
+        for (const ship of result.rows) {
             const stateKey = `${ship.polygon_id}_${ship.uuid}`;
             currentShipStates.add(stateKey);
 
+            // Check if this is a new entry (ship wasn't previously in this polygon)
             if (!shipStates.has(stateKey)) {
                 const polygonType = enabledPolygons.get(ship.polygon_id.toString());
-                console.log(`
-                🚨 SHIP ENTERED POLYGON:
-                ----------------------------------------
-                Alert Type: ${polygonType}
-                Polygon: ${ship.polygon_name} (ID: ${ship.polygon_id})
-                Ship Details:
-                  - UUID: ${ship.uuid}
-                  - MMSI: ${ship.mmsi}
-                  - Name: ${ship.track_name || 'Unknown'}
-                  - Position: ${ship.latitude}, ${ship.longitude}
-                ----------------------------------------`);
-                
+                const timestamp = new Date(ship.sensor_timestamp * 1000); // Convert sensor_timestamp to Date
+
+                console.log(`Creating new notification for Ship ID: ${ship.uuid} entering Polygon ID: ${ship.polygon_id}`);
+
+                // Create or update notification
+                const existingNotification = await Notification.findOne({
+                    ship_id: ship.uuid,
+                    current: true,
+                });
+
+                if (existingNotification) {
+                    existingNotification.alerts.push({
+                        type: polygonType,
+                        shape_id: ship.polygon_id,
+                        timestamp,
+                        description: `Ship entered polygon ${ship.polygon_name}`,
+                    });
+                    existingNotification.current = true;
+                    existingNotification.entry_status = 'entered';
+                    await existingNotification.save();
+                } else {
+                    const newNotification = new Notification({
+                        ship_id: ship.uuid,
+                        alerts: [{
+                            type: polygonType,
+                            shape_id: ship.polygon_id,
+                            timestamp,
+                            description: `Ship entered polygon ${ship.polygon_name}`,
+                        }],
+                        entry_status: 'entered',
+                        acknowledged: false,
+                        current: true,
+                        user_id: 'user_id_placeholder', // Replace with actual user ID if needed
+                    });
+                    await newNotification.save();
+                }
+
+                // Mark the ship as inside the polygon
                 shipStates.set(stateKey, true);
             }
-        });
+        }
 
-        // Handle exits
+        // Handle ship exits
         for (const [stateKey, inPolygon] of shipStates.entries()) {
             if (!currentShipStates.has(stateKey) && inPolygon) {
                 const [polygonId, shipId] = stateKey.split('_');
 
-                // Get polygon details
-                const polygonQuery = `
-                    SELECT name FROM graphical_objects WHERE id = $1;
-                `;
-                const polygonResult = await trackPool.query(polygonQuery, [polygonId]);
-                const polygonName = polygonResult.rows[0]?.name || 'Unknown';
+                console.log(`Ship ID: ${shipId} exited Polygon ID: ${polygonId}`);
 
-                // Get ship's last known position
-                const shipQuery = `
-                    SELECT uuid, mmsi, track_name, latitude, longitude 
-                    FROM track_list 
-                    WHERE uuid = $1 
-                    ORDER BY sensor_timestamp DESC 
-                    LIMIT 1;
-                `;
-                const shipResult = await trackPool.query(shipQuery, [shipId]);
-                const shipDetails = shipResult.rows[0];
+                // Update the existing notification for the ship and polygon
+                const existingNotification = await Notification.findOne({
+                    ship_id: shipId,
+                    'alerts.shape_id': polygonId,
+                    current: true,
+                });
 
-                console.log(`
-                🚫 SHIP EXITED POLYGON:
-                ----------------------------------------
-                Alert Type: ${enabledPolygons.get(polygonId.toString())}
-                Polygon: ${polygonName} (ID: ${polygonId})
-                Ship Details:
-                  - UUID: ${shipId}
-                  - MMSI: ${shipDetails ? shipDetails.mmsi : 'Unknown'}
-                  - Name: ${shipDetails ? shipDetails.track_name || 'Unknown' : 'Unknown'}
-                  - Position: ${shipDetails ? `${shipDetails.latitude}, ${shipDetails.longitude}` : 'Unknown'}
-                ----------------------------------------`);
-                
+                if (existingNotification) {
+                    existingNotification.alerts.push({
+                        type: enabledPolygons.get(polygonId.toString()),
+                        shape_id: polygonId,
+                        timestamp: currentTime,
+                        description: `Ship exited polygon`,
+                    });
+                    existingNotification.current = false;
+                    existingNotification.entry_status = 'exited';
+                    await existingNotification.save();
+                }
+
+                // Remove the ship from the shipStates map
                 shipStates.delete(stateKey);
             }
         }
@@ -1483,82 +1504,82 @@ const updateIntrusionDetection = async (req, res) => {
 
 // Add this function to handle individual ship position updates
 const checkShipIntrusion = async (req, res) => {
-    try {
-        const { shipId, latitude, longitude } = req.body;
-        const enabledPolygonIds = Array.from(enabledPolygons.keys());
+    // try {
+    //     const { shipId, latitude, longitude } = req.body;
+    //     const enabledPolygonIds = Array.from(enabledPolygons.keys());
 
-        if (enabledPolygonIds.length === 0) {
-            return res.json({ shipId, detections: [] });
-        }
+    //     if (enabledPolygonIds.length === 0) {
+    //         return res.json({ shipId, detections: [] });
+    //     }
 
-        const query = `
-            SELECT id, name 
-            FROM graphical_objects 
-            WHERE id = ANY($1::integer[])
-            AND ST_Contains(
-                geometry,
-                ST_SetSRID(ST_MakePoint($2, $3), 4326)
-            )
-        `;
+    //     const query = `
+    //         SELECT id, name 
+    //         FROM graphical_objects 
+    //         WHERE id = ANY($1::integer[])
+    //         AND ST_Contains(
+    //             geometry,
+    //             ST_SetSRID(ST_MakePoint($2, $3), 4326)
+    //         )
+    //     `;
         
-        const result = await trackPool.query(query, [enabledPolygonIds, longitude, latitude]);
+    //     const result = await trackPool.query(query, [enabledPolygonIds, longitude, latitude]);
         
-        const detections = result.rows.map(row => {
-            const stateKey = `${row.id}_${shipId}`;
-            const wasInPolygon = shipStates.has(stateKey);
-            const type = enabledPolygons.get(row.id.toString());
+    //     const detections = result.rows.map(row => {
+    //         const stateKey = `${row.id}_${shipId}`;
+    //         const wasInPolygon = shipStates.has(stateKey);
+    //         const type = enabledPolygons.get(row.id.toString());
 
-            // Only mark as detected if this is a new entry
-            if (!wasInPolygon) {
-                shipStates.set(stateKey, true);
-                return {
-                    polygonId: row.id,
-                    type,
-                    detected: true,
-                    name: row.name,
-                    isNewEntry: true
-                };
-            }
-            return null;
-        }).filter(Boolean);
+    //         // Only mark as detected if this is a new entry
+    //         if (!wasInPolygon) {
+    //             shipStates.set(stateKey, true);
+    //             return {
+    //                 polygonId: row.id,
+    //                 type,
+    //                 detected: true,
+    //                 name: row.name,
+    //                 isNewEntry: true
+    //             };
+    //         }
+    //         return null;
+    //     }).filter(Boolean);
 
-        // Check for exits
-        enabledPolygonIds.forEach(polygonId => {
-            const stateKey = `${polygonId}_${shipId}`;
-            if (shipStates.has(stateKey) && !result.rows.find(row => row.id === polygonId)) {
-                // Ship has exited this polygon
-                console.log(`
-                🚫 SHIP EXITED POLYGON (Real-time):
-                ----------------------------------------
-                Polygon ID: ${polygonId}
-                Ship ID: ${shipId}
-                ----------------------------------------`);
-                shipStates.delete(stateKey);
-            }
-        });
+    //     // Check for exits
+    //     enabledPolygonIds.forEach(polygonId => {
+    //         const stateKey = `${polygonId}_${shipId}`;
+    //         if (shipStates.has(stateKey) && !result.rows.find(row => row.id === polygonId)) {
+    //             // Ship has exited this polygon
+    //             console.log(`
+    //             🚫 SHIP EXITED POLYGON (Real-time):
+    //             ----------------------------------------
+    //             Polygon ID: ${polygonId}
+    //             Ship ID: ${shipId}
+    //             ----------------------------------------`);
+    //             shipStates.delete(stateKey);
+    //         }
+    //     });
 
-        if (detections.length > 0) {
-            console.log('\n🚨 NEW INTRUSION DETECTED:');
-            detections.forEach(detection => {
-                console.log(`
-                ----------------------------------------
-                Alert Type: ${detection.type}
-                Polygon: ${detection.name} (ID: ${detection.polygonId})
-                Ship ID: ${shipId}
-                Position: ${latitude}, ${longitude}
-                ----------------------------------------`);
-            });
-        }
+    //     if (detections.length > 0) {
+    //         console.log('\n🚨 NEW INTRUSION DETECTED:');
+    //         detections.forEach(detection => {
+    //             console.log(`
+    //             ----------------------------------------
+    //             Alert Type: ${detection.type}
+    //             Polygon: ${detection.name} (ID: ${detection.polygonId})
+    //             Ship ID: ${shipId}
+    //             Position: ${latitude}, ${longitude}
+    //             ----------------------------------------`);
+    //         });
+    //     }
 
-        res.json({ shipId, detections });
+    //     res.json({ shipId, detections });
 
-    } catch (err) {
-        console.error('Error in checkShipIntrusion:', err);
-        res.status(500).json({ 
-            error: 'Server Error', 
-            details: err.message 
-        });
-    }
+    // } catch (err) {
+    //     console.error('Error in checkShipIntrusion:', err);
+    //     res.status(500).json({ 
+    //         error: 'Server Error', 
+    //         details: err.message 
+    //     });
+    // }
 };
 
 module.exports = { 
