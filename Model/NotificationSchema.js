@@ -3,9 +3,9 @@ const mongoose = require('mongoose');
 
 const alertSchema = new mongoose.Schema({
     type: { type: String, required: true },
-    timestamp: { type: Date, default: Date.now },
+    sensor_timestamp: { type: Number, required: true },
     shape_id: { type: String, required: true },
-    description: { type: String, required: true } //now just the intrusion detection description
+    description: { type: String, required: true }
 });
 
 const incidentSchema = new mongoose.Schema({
@@ -13,10 +13,15 @@ const incidentSchema = new mongoose.Schema({
     alerts: [alertSchema],
     entry_status: { type: String, required: true },
     acknowledged: { type: Boolean, default: false },
-    current: { type: Boolean, default: false }, //if the incident is currently happening
-    user_id: { type: String, required: true },
-    comment: { type: String, default: 'Work in progress' }
-}, { timestamps: true });
+    current: { type: Boolean, default: false },
+    user_id: { type: String, required: true, default: 'admin' },
+    comment: { type: String, default: 'Work in progress' },
+    createdAt: { type: Number },
+    updatedAt: { type: Number }
+});
+
+// Remove automatic timestamps
+incidentSchema.set('timestamps', false);
 
 // Add an index for efficient querying by ship_id
 incidentSchema.index({ ship_id: 1, 'alerts.shape_id': 1, current: 1 });
@@ -24,3 +29,5 @@ incidentSchema.index({ ship_id: 1, 'alerts.shape_id': 1, current: 1 });
 const Notification = mongoose.model('Notification', incidentSchema);
 
 module.exports = Notification;
+
+

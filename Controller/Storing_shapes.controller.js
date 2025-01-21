@@ -1323,7 +1323,7 @@ const deleteSquareById = async (req, res) => {
 const toUnixTimestamp = (date) => Math.floor(date.getTime() / 1000);
 
 // Modify the checkIntrusionsForAllEnabledPolygons function
-const checkIntrusionsForAllEnabledPolygons = async () => {
+const checkIntrusionsForAllEnabledPolygons = async (ship) => {
     if (enabledPolygons.size === 0) return;
 
     try {
@@ -1365,14 +1365,12 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
             const stateKey = `${ship.polygon_id}_${ship.uuid}`;
             currentShipStates.add(stateKey);
 
-            // Check if this is a new entry (ship wasn't previously in this polygon)
+            // Check if this is a new entry
             if (!shipStates.has(stateKey)) {
                 const polygonType = enabledPolygons.get(ship.polygon_id.toString());
-                const timestamp = new Date(ship.sensor_timestamp * 1000); // Convert sensor_timestamp to Date
 
                 console.log(`Creating new notification for Ship ID: ${ship.uuid} entering Polygon ID: ${ship.polygon_id}`);
 
-                // Create or update notification
                 const existingNotification = await Notification.findOne({
                     ship_id: ship.uuid,
                     current: true,
@@ -1382,11 +1380,13 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
                     existingNotification.alerts.push({
                         type: polygonType,
                         shape_id: ship.polygon_id,
-                        timestamp,
+                        sensor_timestamp: ship.sensor_timestamp,
                         description: `Ship entered polygon ${ship.polygon_name}`,
                     });
                     existingNotification.current = true;
                     existingNotification.entry_status = 'entered';
+                    existingNotification.user_id = 'admin';
+                    existingNotification.updatedAt = ship.sensor_timestamp;
                     await existingNotification.save();
                 } else {
                     const newNotification = new Notification({
@@ -1394,13 +1394,15 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
                         alerts: [{
                             type: polygonType,
                             shape_id: ship.polygon_id,
-                            timestamp,
+                            sensor_timestamp: ship.sensor_timestamp,
                             description: `Ship entered polygon ${ship.polygon_name}`,
                         }],
                         entry_status: 'entered',
                         acknowledged: false,
                         current: true,
-                        user_id: 'user_id_placeholder', // Replace with actual user ID if needed
+                        user_id: 'admin',
+                        createdAt: ship.sensor_timestamp,
+                        updatedAt: ship.sensor_timestamp,
                     });
                     await newNotification.save();
                 }
@@ -1417,6 +1419,9 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
 
                 console.log(`Ship ID: ${shipId} exited Polygon ID: ${polygonId}`);
 
+                // Get current timestamp in milliseconds (same format as sensor_timestamp)
+                const currentTimestamp = Date.now();
+
                 // Update the existing notification for the ship and polygon
                 const existingNotification = await Notification.findOne({
                     ship_id: shipId,
@@ -1428,11 +1433,12 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
                     existingNotification.alerts.push({
                         type: enabledPolygons.get(polygonId.toString()),
                         shape_id: polygonId,
-                        timestamp: currentTime,
+                        sensor_timestamp: currentTimestamp, // Use current timestamp for exit
                         description: `Ship exited polygon`,
                     });
                     existingNotification.current = false;
                     existingNotification.entry_status = 'exited';
+                    existingNotification.updatedAt = currentTimestamp; // Update the timestamp
                     await existingNotification.save();
                 }
 
@@ -1469,24 +1475,20 @@ const updateIntrusionDetection = async (req, res) => {
         
         // Update with new polygon IDs and their types
         polygonIds.forEach((id, index) => {
-            const type = polygonTypes?.[index] || 'Warning'; // Default to 'Warning' if type not specified
-            enabledPolygons.set(id.toString(), type); // Convert ID to string to ensure consistency
+            const type = polygonTypes?.[index] || 'Warning';
+            enabledPolygons.set(id.toString(), type);
         });
 
-        console.log('Updated intrusion detection polygons:', 
-            Array.from(enabledPolygons.entries())
-                .map(([id, type]) => `${id}: ${type}`)
-                .join(', ')
-        );
-        
-        // Start the periodic check if not already running
-        if (!global.intrusionCheckInterval) {
-            global.intrusionCheckInterval = setInterval(
-                checkIntrusionsForAllEnabledPolygons, 
-                INTRUSION_CHECK_INTERVAL
-            );
-            console.log('Started intrusion check interval');
+        // Clear existing interval if it exists
+        if (global.intrusionCheckInterval) {
+            clearInterval(global.intrusionCheckInterval);
+            global.intrusionCheckInterval = null;
         }
+
+        // Create new interval without username
+        const checkIntrusions = () => checkIntrusionsForAllEnabledPolygons(null);
+        global.intrusionCheckInterval = setInterval(checkIntrusions, INTRUSION_CHECK_INTERVAL);
+        console.log('Started new intrusion check interval');
 
         res.status(200).json({
             message: 'Intrusion detection settings updated',
@@ -1614,3 +1616,17 @@ module.exports = {
     updateIntrusionDetection,
     checkShipIntrusion
 };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
