@@ -1,0 +1,41 @@
+const mongoose = require('mongoose');
+
+const RoutePointSchema = new mongoose.Schema({
+    name: {
+        type: String,
+        required: true
+    },
+    coordinate: {
+        latitude: {
+            type: Number,
+            required: true
+        },
+        longitude: {
+            type: Number,
+            required: true
+        }
+    }
+});
+
+const RouteSchema = new mongoose.Schema({
+    name: {
+        type: String,
+        required: true
+    },
+    points: [RoutePointSchema],
+    totalDistance: {
+        type: Number,
+        required: true
+    },
+    createdAt: {
+        type: Date,
+        default: Date.now
+    },
+    userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: false
+    }
+});
+
+module.exports = mongoose.model('Route', RouteSchema);

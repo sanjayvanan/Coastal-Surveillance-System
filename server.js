@@ -16,8 +16,7 @@ const WatchlistRoute = require('./Routes/WatchlistRoute')
 const notificationRoutes = require('./routes/notificationRoutes');
 const cookieParser = require('cookie-parser');
 const { verifyToken, SECRET_KEY } = require('./middleware/auth');
-
-
+const routeRoutes = require('./Routes/RouteRoutes'); // Import the route routes
 
 const app = express();
 const port = 3000;
@@ -39,8 +38,6 @@ const swaggerOptions = {
   },
   apis: ['./Routes/*.js'], // This should include your ships.routes.js file
 };
-
-
 
 const swaggerDocs = swaggerJsDoc(swaggerOptions);
 app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerDocs));
@@ -66,6 +63,7 @@ app.use('/watchlist',WatchlistRoute)
 app.use('/api/ships', shipsRouter);
 app.use('/api/region-marking/', geoRouter);
 app.use('/api', notificationRoutes);
+app.use('/api/routes', routeRoutes); // Add this line to use the route routes
 
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
