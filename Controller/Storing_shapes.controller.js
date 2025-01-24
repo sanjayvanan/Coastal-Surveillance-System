@@ -1331,6 +1331,7 @@ const checkIntrusionsForAllEnabledPolygons = async (ship) => {
         console.log(`\n=== Checking intrusions at ${currentTime.toISOString()} ===`);
 
         const polygonIds = Array.from(enabledPolygons.keys());
+        const currentTimestamp = Date.now();
 
         const query = `
             SELECT 
@@ -1372,37 +1373,39 @@ const checkIntrusionsForAllEnabledPolygons = async (ship) => {
                 console.log(`Creating new notification for Ship ID: ${ship.uuid} entering Polygon ID: ${ship.polygon_id}`);
 
                 const existingNotification = await Notification.findOne({
-                    ship_id: ship.uuid,
-                    current: true,
+                    ship_id: ship.uuid
                 });
 
                 if (existingNotification) {
+                    // Add new alert to existing notification
                     existingNotification.alerts.push({
                         type: polygonType,
-                        shape_id: ship.polygon_id,
-                        sensor_timestamp: ship.sensor_timestamp,
-                        description: `Ship entered polygon ${ship.polygon_name}`,
+                        shape_id: ship.polygon_id.toString(),
+                        sensor_timestamp: currentTimestamp,
+                        entry_status: 'entered',
+                        current: true,
+                        user_id: 'admin',
+                        acknowledged: false,
+                        description: `Ship entered polygon ${ship.polygon_name}`
                     });
-                    existingNotification.current = true;
-                    existingNotification.entry_status = 'entered';
-                    existingNotification.user_id = 'admin';
-                    existingNotification.updatedAt = ship.sensor_timestamp;
+                    existingNotification.updatedAt = currentTimestamp;
                     await existingNotification.save();
                 } else {
+                    // Create new notification
                     const newNotification = new Notification({
                         ship_id: ship.uuid,
                         alerts: [{
                             type: polygonType,
-                            shape_id: ship.polygon_id,
-                            sensor_timestamp: ship.sensor_timestamp,
-                            description: `Ship entered polygon ${ship.polygon_name}`,
+                            shape_id: ship.polygon_id.toString(),
+                            sensor_timestamp: currentTimestamp,
+                            entry_status: 'entered',
+                            current: true,
+                            user_id: 'admin',
+                            acknowledged: false,
+                            description: `Ship entered polygon ${ship.polygon_name}`
                         }],
-                        entry_status: 'entered',
-                        acknowledged: false,
-                        current: true,
-                        user_id: 'admin',
-                        createdAt: ship.sensor_timestamp,
-                        updatedAt: ship.sensor_timestamp,
+                        createdAt: currentTimestamp,
+                        updatedAt: currentTimestamp
                     });
                     await newNotification.save();
                 }
@@ -1419,26 +1422,24 @@ const checkIntrusionsForAllEnabledPolygons = async (ship) => {
 
                 console.log(`Ship ID: ${shipId} exited Polygon ID: ${polygonId}`);
 
-                // Get current timestamp in milliseconds (same format as sensor_timestamp)
-                const currentTimestamp = Date.now();
-
                 // Update the existing notification for the ship and polygon
                 const existingNotification = await Notification.findOne({
                     ship_id: shipId,
-                    'alerts.shape_id': polygonId,
-                    current: true,
+                    'alerts.shape_id': polygonId
                 });
 
                 if (existingNotification) {
                     existingNotification.alerts.push({
                         type: enabledPolygons.get(polygonId.toString()),
                         shape_id: polygonId,
-                        sensor_timestamp: currentTimestamp, // Use current timestamp for exit
-                        description: `Ship exited polygon`,
+                        sensor_timestamp: currentTimestamp,
+                        entry_status: 'exited',
+                        current: false,
+                        user_id: 'admin',
+                        acknowledged: false,
+                        description: `Ship exited polygon`
                     });
-                    existingNotification.current = false;
-                    existingNotification.entry_status = 'exited';
-                    existingNotification.updatedAt = currentTimestamp; // Update the timestamp
+                    existingNotification.updatedAt = currentTimestamp;
                     await existingNotification.save();
                 }
 

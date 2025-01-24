@@ -5,17 +5,17 @@ const alertSchema = new mongoose.Schema({
     type: { type: String, required: true },
     sensor_timestamp: { type: Number, required: true },
     shape_id: { type: String, required: true },
+    entry_status: { type: String, required: true },
+    current: { type: Boolean, default: false },
+    user_id: { type: String, required: true, default: 'admin' },
+    acknowledged: { type: Boolean, default: false },
+    ACK_time: { type: Number,default:0 },
     description: { type: String, required: true }
 });
 
 const incidentSchema = new mongoose.Schema({
     ship_id: { type: String, required: true },
     alerts: [alertSchema],
-    entry_status: { type: String, required: true },
-    acknowledged: { type: Boolean, default: false },
-    current: { type: Boolean, default: false },
-    user_id: { type: String, required: true, default: 'admin' },
-    comment: { type: String, default: 'Work in progress' },
     createdAt: { type: Number },
     updatedAt: { type: Number }
 });
@@ -23,8 +23,10 @@ const incidentSchema = new mongoose.Schema({
 // Remove automatic timestamps
 incidentSchema.set('timestamps', false);
 
-// Add an index for efficient querying by ship_id
-incidentSchema.index({ ship_id: 1, 'alerts.shape_id': 1, current: 1 });
+// Add indexes for efficient querying
+incidentSchema.index({ ship_id: 1 });
+incidentSchema.index({ 'alerts.shape_id': 1 });
+incidentSchema.index({ 'alerts.current': 1 });
 
 const Notification = mongoose.model('Notification', incidentSchema);
 

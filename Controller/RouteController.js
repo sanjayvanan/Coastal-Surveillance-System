@@ -35,6 +35,23 @@ const RouteController = {
         }
     },
 
+    // Get a single route by ID
+    getRouteById: async (req, res) => {
+        try {
+            const { routeId } = req.params;
+            const route = await Route.findById(routeId);
+
+            if (!route) {
+                return res.status(404).json({ message: 'Route not found' });
+            }
+
+            res.status(200).json(route);
+        } catch (error) {
+            console.error('Error fetching route:', error);
+            res.status(500).json({ message: 'Error fetching route', error: error.message });
+        }
+    },
+
     // Delete a route
     deleteRoute: async (req, res) => {
         try {
@@ -50,6 +67,17 @@ const RouteController = {
         } catch (error) {
             console.error('Error deleting route:', error);
             res.status(500).json({ message: 'Error deleting route', error: error.message });
+        }
+    },
+
+    // Delete all routes
+    deleteAllRoutes: async (req, res) => {
+        try {
+            await Route.deleteMany(); // Delete all routes
+            res.status(200).json({ message: 'All routes deleted successfully' });
+        } catch (error) {
+            console.error('Error deleting routes:', error);
+            res.status(500).json({ message: 'Error deleting routes', error: error.message });
         }
     },
 

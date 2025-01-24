@@ -2,7 +2,7 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
-const moment = require('moment-timezone');  // You'll need to install this package
+const moment = require('moment-timezone');  
 const bcrypt = require('bcrypt');
 const shipsRouter = require('./Routes/ships.routes.js'); 
 const geoRouter = require('./Routes/geo.routes.js');     
@@ -16,8 +16,7 @@ const WatchlistRoute = require('./Routes/WatchlistRoute')
 const notificationRoutes = require('./routes/notificationRoutes');
 const cookieParser = require('cookie-parser');
 const { verifyToken, SECRET_KEY } = require('./middleware/auth');
-const routeRoutes = require('./Routes/RouteRoutes'); // Import the route routes
-
+const routeRoutes = require('./Routes/RouteRoutes'); 
 const app = express();
 const port = 3000;
 
