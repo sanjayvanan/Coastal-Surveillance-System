@@ -26,6 +26,7 @@ const trackPool = new Pool({
 const enabledPolygons = new Map(); // Store polygon ID -> type mapping
 const INTRUSION_CHECK_INTERVAL = 60000; // 1 minute in milliseconds
 const shipStates = new Map(); // Track ship states: Map<polygonId_shipId, boolean>
+const initialShipStates = new Map(); // Store polygon_id -> Set of ship_ids initially inside
 
 const storePolygon = async (req, res) => {
     try {
@@ -1323,7 +1324,7 @@ const deleteSquareById = async (req, res) => {
 const toUnixTimestamp = (date) => Math.floor(date.getTime() / 1000);
 
 // Modify the checkIntrusionsForAllEnabledPolygons function
-const checkIntrusionsForAllEnabledPolygons = async (ship) => {
+const checkIntrusionsForAllEnabledPolygons = async () => {
     if (enabledPolygons.size === 0) return;
 
     try {
@@ -1366,11 +1367,19 @@ const checkIntrusionsForAllEnabledPolygons = async (ship) => {
             const stateKey = `${ship.polygon_id}_${ship.uuid}`;
             currentShipStates.add(stateKey);
 
+            // Get initial ships for this polygon
+            const initialShips = initialShipStates.get(ship.polygon_id.toString());
+            
+            // Skip if this ship was initially inside the polygon
+            if (initialShips && initialShips.has(ship.uuid)) {
+                continue;
+            }
+
             // Check if this is a new entry
             if (!shipStates.has(stateKey)) {
                 const polygonType = enabledPolygons.get(ship.polygon_id.toString());
 
-                console.log(`Creating new notification for Ship ID: ${ship.uuid} entering Polygon ID: ${ship.polygon_id}`);
+                console.log(`New ship entry detected - Ship ID: ${ship.uuid} entering Polygon ID: ${ship.polygon_id}`);
 
                 const existingNotification = await Notification.findOne({
                     ship_id: ship.uuid
@@ -1415,14 +1424,21 @@ const checkIntrusionsForAllEnabledPolygons = async (ship) => {
             }
         }
 
-        // Handle ship exits
+        // Handle ship exits (only for ships that weren't initially inside)
         for (const [stateKey, inPolygon] of shipStates.entries()) {
             if (!currentShipStates.has(stateKey) && inPolygon) {
                 const [polygonId, shipId] = stateKey.split('_');
+                
+                // Get initial ships for this polygon
+                const initialShips = initialShipStates.get(polygonId);
+                
+                // Skip if this ship was initially inside the polygon
+                if (initialShips && initialShips.has(shipId)) {
+                    continue;
+                }
 
-                console.log(`Ship ID: ${shipId} exited Polygon ID: ${polygonId}`);
+                console.log(`Ship exit detected - Ship ID: ${shipId} exited Polygon ID: ${polygonId}`);
 
-                // Update the existing notification for the ship and polygon
                 const existingNotification = await Notification.findOne({
                     ship_id: shipId,
                     'alerts.shape_id': polygonId
@@ -1463,7 +1479,6 @@ const updateIntrusionDetection = async (req, res) => {
             polygonTypes
         });
 
-        // Validate input
         if (!Array.isArray(polygonIds)) {
             return res.status(400).json({ 
                 error: 'Invalid input', 
@@ -1473,12 +1488,17 @@ const updateIntrusionDetection = async (req, res) => {
 
         // Clear existing enabled polygons
         enabledPolygons.clear();
+        initialShipStates.clear(); // Clear initial states
         
         // Update with new polygon IDs and their types
-        polygonIds.forEach((id, index) => {
-            const type = polygonTypes?.[index] || 'Warning';
-            enabledPolygons.set(id.toString(), type);
-        });
+        for (let i = 0; i < polygonIds.length; i++) {
+            const polygonId = polygonIds[i].toString();
+            const type = polygonTypes?.[i] || 'Warning';
+            enabledPolygons.set(polygonId, type);
+
+            // Get initial ships in this polygon
+            await recordInitialShipsInPolygon(polygonId);
+        }
 
         // Clear existing interval if it exists
         if (global.intrusionCheckInterval) {
@@ -1486,8 +1506,8 @@ const updateIntrusionDetection = async (req, res) => {
             global.intrusionCheckInterval = null;
         }
 
-        // Create new interval without username
-        const checkIntrusions = () => checkIntrusionsForAllEnabledPolygons(null);
+        // Create new interval
+        const checkIntrusions = () => checkIntrusionsForAllEnabledPolygons();
         global.intrusionCheckInterval = setInterval(checkIntrusions, INTRUSION_CHECK_INTERVAL);
         console.log('Started new intrusion check interval');
 
@@ -1502,6 +1522,38 @@ const updateIntrusionDetection = async (req, res) => {
             details: err.message,
             stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
         });
+    }
+};
+
+// Function to record initial ships in a polygon
+const recordInitialShipsInPolygon = async (polygonId) => {
+    try {
+        const query = `
+            SELECT 
+                tl.uuid
+            FROM track_list tl
+            CROSS JOIN (
+                SELECT geometry 
+                FROM graphical_objects 
+                WHERE id = $1
+            ) go
+            WHERE ST_Contains(
+                go.geometry,
+                ST_SetSRID(ST_MakePoint(tl.longitude, tl.latitude), 4326)
+            )
+            AND tl.sensor_timestamp >= $2::bigint
+        `;
+
+        const timeWindow = Math.floor(Date.now() / 1000) - (5 * 60);
+        const result = await trackPool.query(query, [polygonId, timeWindow]);
+        
+        // Store the set of ships initially inside this polygon
+        const initialShips = new Set(result.rows.map(row => row.uuid));
+        initialShipStates.set(polygonId, initialShips);
+        
+        console.log(`Recorded ${initialShips.size} initial ships in polygon ${polygonId}`);
+    } catch (err) {
+        console.error(`Error recording initial ships for polygon ${polygonId}:`, err);
     }
 };
 
