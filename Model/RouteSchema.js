@@ -14,6 +14,11 @@ const RoutePointSchema = new mongoose.Schema({
             type: Number,
             required: true
         }
+    },
+    markerType: {
+        type: String,
+        default: 'default',
+        enum: ['default', 'checkpoint', 'port', 'anchor', 'warning']
     }
 });
 
@@ -26,6 +31,10 @@ const RouteSchema = new mongoose.Schema({
     totalDistance: {
         type: Number,
         required: true
+    },
+    lineColor: {
+        type: String,
+        default: 'green'
     },
     createdAt: {
         type: Date,

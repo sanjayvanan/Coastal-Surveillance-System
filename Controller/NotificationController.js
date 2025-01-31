@@ -80,8 +80,40 @@ const getNotificationsByShipId = async (req, res) => {
     }
 };
 
+const acknowledgeNotification = async (req, res) => {
+    try {
+        const { id } = req.params; // Get the notification UUID from the request parameters
+        const { alertId } = req.body; // Get the alert ObjectId from the request body
+
+        // Find the notification by UUID and update the acknowledged field and ACK_time of the specific alert
+        const notification = await Notification.findOneAndUpdate(
+            { ship_id: id, 'alerts._id': alertId }, // Match notification by ship_id and specific alert by ObjectId
+            { 
+                $set: { 
+                    'alerts.$.acknowledged': true, // Set acknowledged to true
+                    'alerts.$.ACK_time': Date.now() // Set ACK_time to current timestamp
+                } 
+            }, 
+            { new: true } // Return the updated document
+        );
+
+        if (!notification) {
+            return res.status(404).json({ message: 'Notification or alert not found' });
+        }
+
+        res.status(200).json({
+            message: 'Alert acknowledged successfully',
+            notification
+        });
+    } catch (err) {
+        console.error('Error acknowledging alert:', err);
+        res.status(500).json({ error: 'Server Error', details: err.message });
+    }
+};
+
 module.exports = {
     getAllNotifications,
     addOrUpdateNotification,
-    getNotificationsByShipId
+    getNotificationsByShipId,
+    acknowledgeNotification
 };

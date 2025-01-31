@@ -1329,22 +1329,31 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
 
     try {
         const currentTime = new Date();
+        const currentTimeMs = Date.now();
+        const timeWindowMs = currentTimeMs - (5 * 60 * 1000); // Last 5 minutes in milliseconds
+
         console.log(`\n=== Checking intrusions at ${currentTime.toISOString()} ===`);
 
         const polygonIds = Array.from(enabledPolygons.keys());
-        const currentTimestamp = Date.now();
 
         const query = `
+            WITH recent_ships AS (
+                SELECT DISTINCT ON (uuid) 
+                    uuid, 
+                    mmsi,
+                    track_name,
+                    latitude,
+                    longitude,
+                    sensor_timestamp
+                FROM track_list
+                WHERE sensor_timestamp >= $2::bigint
+                ORDER BY uuid, sensor_timestamp DESC
+            )
             SELECT 
-                tl.uuid,
-                tl.mmsi,
-                tl.track_name,
-                tl.latitude,
-                tl.longitude,
-                tl.sensor_timestamp,
+                rs.*,
                 go.id as polygon_id,
                 go.name as polygon_name
-            FROM track_list tl
+            FROM recent_ships rs
             CROSS JOIN (
                 SELECT id, name, geometry 
                 FROM graphical_objects 
@@ -1352,14 +1361,11 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
             ) go
             WHERE ST_Contains(
                 go.geometry,
-                ST_SetSRID(ST_MakePoint(tl.longitude, tl.latitude), 4326)
+                ST_SetSRID(ST_MakePoint(rs.longitude, rs.latitude), 4326)
             )
-            AND tl.sensor_timestamp >= $2::bigint
         `;
 
-        const timeWindow = Math.floor(Date.now() / 1000) - (5 * 60);
-        const result = await trackPool.query(query, [polygonIds, timeWindow]);
-
+        const result = await trackPool.query(query, [polygonIds, timeWindowMs]);
         const currentShipStates = new Set();
 
         // Handle ship entries
@@ -1378,7 +1384,6 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
             // Check if this is a new entry
             if (!shipStates.has(stateKey)) {
                 const polygonType = enabledPolygons.get(ship.polygon_id.toString());
-
                 console.log(`New ship entry detected - Ship ID: ${ship.uuid} entering Polygon ID: ${ship.polygon_id}`);
 
                 const existingNotification = await Notification.findOne({
@@ -1390,14 +1395,14 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
                     existingNotification.alerts.push({
                         type: polygonType,
                         shape_id: ship.polygon_id.toString(),
-                        sensor_timestamp: currentTimestamp,
+                        sensor_timestamp: currentTimeMs,
                         entry_status: 'entered',
                         current: true,
                         user_id: 'admin',
                         acknowledged: false,
                         description: `Ship entered polygon ${ship.polygon_name}`
                     });
-                    existingNotification.updatedAt = currentTimestamp;
+                    existingNotification.updatedAt = currentTimeMs;
                     await existingNotification.save();
                 } else {
                     // Create new notification
@@ -1406,15 +1411,15 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
                         alerts: [{
                             type: polygonType,
                             shape_id: ship.polygon_id.toString(),
-                            sensor_timestamp: currentTimestamp,
+                            sensor_timestamp: currentTimeMs,
                             entry_status: 'entered',
                             current: true,
                             user_id: 'admin',
                             acknowledged: false,
                             description: `Ship entered polygon ${ship.polygon_name}`
                         }],
-                        createdAt: currentTimestamp,
-                        updatedAt: currentTimestamp
+                        createdAt: currentTimeMs,
+                        updatedAt: currentTimeMs
                     });
                     await newNotification.save();
                 }
@@ -1424,7 +1429,7 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
             }
         }
 
-        // Handle ship exits (only for ships that weren't initially inside)
+        // Handle ship exits
         for (const [stateKey, inPolygon] of shipStates.entries()) {
             if (!currentShipStates.has(stateKey) && inPolygon) {
                 const [polygonId, shipId] = stateKey.split('_');
@@ -1448,14 +1453,14 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
                     existingNotification.alerts.push({
                         type: enabledPolygons.get(polygonId.toString()),
                         shape_id: polygonId,
-                        sensor_timestamp: currentTimestamp,
+                        sensor_timestamp: currentTimeMs,
                         entry_status: 'exited',
                         current: false,
                         user_id: 'admin',
                         acknowledged: false,
                         description: `Ship exited polygon`
                     });
-                    existingNotification.updatedAt = currentTimestamp;
+                    existingNotification.updatedAt = currentTimeMs;
                     await existingNotification.save();
                 }
 
@@ -1465,7 +1470,7 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
         }
 
     } catch (err) {
-        console.error('Error in periodic intrusion check:', err.stack);
+        console.error('Error in periodic intrusion check:', err);
     }
 };
 
@@ -1528,10 +1533,19 @@ const updateIntrusionDetection = async (req, res) => {
 // Function to record initial ships in a polygon
 const recordInitialShipsInPolygon = async (polygonId) => {
     try {
+        // Convert current time to milliseconds for comparison with sensor_timestamp
+        const currentTimeMs = Date.now();
+        const timeWindowMs = currentTimeMs - (5 * 60 * 1000); // Last 5 minutes in milliseconds
+
         const query = `
-            SELECT 
-                tl.uuid
-            FROM track_list tl
+            WITH recent_ships AS (
+                SELECT DISTINCT ON (uuid) uuid, sensor_timestamp, longitude, latitude
+                FROM track_list
+                WHERE sensor_timestamp >= $2::bigint  -- Compare with millisecond timestamp
+                ORDER BY uuid, sensor_timestamp DESC
+            )
+            SELECT rs.uuid
+            FROM recent_ships rs
             CROSS JOIN (
                 SELECT geometry 
                 FROM graphical_objects 
@@ -1539,15 +1553,13 @@ const recordInitialShipsInPolygon = async (polygonId) => {
             ) go
             WHERE ST_Contains(
                 go.geometry,
-                ST_SetSRID(ST_MakePoint(tl.longitude, tl.latitude), 4326)
+                ST_SetSRID(ST_MakePoint(rs.longitude, rs.latitude), 4326)
             )
-            AND tl.sensor_timestamp >= $2::bigint
         `;
 
-        const timeWindow = Math.floor(Date.now() / 1000) - (5 * 60);
-        const result = await trackPool.query(query, [polygonId, timeWindow]);
+        console.log(`Executing query for polygon ${polygonId} with time window: ${timeWindowMs}`);
+        const result = await trackPool.query(query, [polygonId, timeWindowMs]);
         
-        // Store the set of ships initially inside this polygon
         const initialShips = new Set(result.rows.map(row => row.uuid));
         initialShipStates.set(polygonId, initialShips);
         
