@@ -72,7 +72,7 @@ const storePolygon = async (req, res) => {
 //get all the ships within a polygon
 const getShipsWithinPolygon = async (req, res) => {
     try {
-        const  polygonCoords  = req.query.polygonCoords;
+        const polygonCoords = req.query.polygonCoords;
         
         if (!polygonCoords) {
             return res.status(400).json({ error: 'Polygon coordinates are required' });
@@ -81,8 +81,21 @@ const getShipsWithinPolygon = async (req, res) => {
         const hours = parseInt(req.query.hours) || 24;
         const hoursAgo = Date.now() - (hours * 60 * 60 * 1000);
 
+        // Retrieve the polygon name based on the coordinates
+        const polygonNameQuery = `
+            SELECT name FROM graphical_objects
+            WHERE ST_Contains(geometry, ST_GeomFromText($1, 4326))
+            LIMIT 1;
+        `;
+        const polygonNameResult = await trackPool.query(polygonNameQuery, [polygonCoords]);
+        const polygonName = polygonNameResult.rows.length > 0 ? polygonNameResult.rows[0].name : 'Unknown Polygon';
+
+        // Query to get all relevant ship details
         const shipsQuery = `
-            SELECT DISTINCT tl.mmsi, tl.track_name, tl.latitude, tl.longitude
+            SELECT DISTINCT tl.mmsi, tl.track_name, tl.latitude, tl.longitude, 
+                            tl.height_depth, tl.speed_over_ground, 
+                            tl.course_over_ground, tl.true_heading, 
+                            tl.rate_of_turn, tl.sensor_timestamp
             FROM track_list tl
             WHERE ST_Contains(
                 ST_GeomFromText($1, 4326),
@@ -95,7 +108,19 @@ const getShipsWithinPolygon = async (req, res) => {
         res.status(200).json({
             message: 'Ships within polygon retrieved successfully',
             timeWindow: `Last ${hours} hours`,
-            ships: shipsResult.rows
+            polygonName: polygonName, // Include the polygon name
+            ships: shipsResult.rows.map(ship => ({
+                mmsi: ship.mmsi,
+                track_name: ship.track_name,
+                latitude: ship.latitude,
+                longitude: ship.longitude,
+                height_depth: ship.height_depth,
+                speed_over_ground: ship.speed_over_ground,
+                course_over_ground: ship.course_over_ground,
+                true_heading: ship.true_heading,
+                rate_of_turn: ship.rate_of_turn,
+                sensor_timestamp: ship.sensor_timestamp // Include timestamp
+            }))
         });
     } catch (err) {
         console.error('Error retrieving ships within polygon:', err);
