@@ -19,6 +19,12 @@ const { verifyToken, SECRET_KEY } = require('./middleware/auth');
 const routeRoutes = require('./Routes/RouteRoutes'); 
 const app = express();
 const port = 3000;
+const cors = require('cors');
+
+const corsOptions = {
+  origin: true,
+  credentials: true,
+}
 
 // Swagger configuration
 const swaggerOptions = {
@@ -45,7 +51,7 @@ app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerDocs));
 app.use(bodyParser.json());
 // Add cookie-parser middleware
 app.use(cookieParser());
-
+app.use(cors(corsOptions));
 // MongoDB connection
 //mongodb+srv://zosh:zosh@zoshcpn.q40rq.mongodb.net/  
 mongoose.connect('mongodb+srv://zosh:zosh@zoshcpn.q40rq.mongodb.net/QT_Map', {
