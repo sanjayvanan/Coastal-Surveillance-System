@@ -367,20 +367,26 @@ const trackList = async (req, res) => {
         // Calculate the timestamp for 'hours' ago
         const hoursAgo = new Date(Date.now() - hours * 60 * 60 * 1000);
 
-        // Query to select rows from the track_list table from the past specified number of hours, ordered by most recent
+        // Query to select regular tracks and always include tracks with message_type__id=1000
+        // this is now just appending the data of 1000 with the normal tracks
         const query = `
             SELECT * 
             FROM track_list 
             WHERE sensor_timestamp >= $1
-            ORDER BY sensor_timestamp DESC
+                OR message_type__id = 1000
+            ORDER BY 
+                CASE 
+                    WHEN message_type__id = 1000 THEN 0 
+                    ELSE 1 
+                END,
+                sensor_timestamp DESC
         `;
 
         const result = await pool.query(query, [hoursAgo.getTime()]);
 
         // Check if there are any results
         if (result.rows.length > 0) {
-            res.json(
-             result.rows);
+            res.json(result.rows);
         } else {
             res.status(404).json({ message: `No track list found for the past ${hours} hours` });
         }
