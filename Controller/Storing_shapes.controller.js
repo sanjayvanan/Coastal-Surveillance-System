@@ -17,7 +17,7 @@ const pool = new Pool({
 // Connection pool for the track server
 const trackPool = new Pool({
     user: 'track_user',
-    host: '192.168.1.100',
+    host: '192.168.1.6',
     database: 'track_processor_v2',
     password: 'zosh',
     port: 5432,
