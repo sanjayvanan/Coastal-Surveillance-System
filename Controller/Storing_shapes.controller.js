@@ -17,7 +17,7 @@ const pool = new Pool({
 // Connection pool for the track server
 const trackPool = new Pool({
     user: 'track_user',
-    host: '192.168.1.6',
+    host: '192.168.1.100',
     database: 'track_processor_v2',
     password: 'zosh',
     port: 5432,
@@ -1441,7 +1441,7 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
                             current: true,
                             user_id: 'admin',
                             acknowledged: false,
-                            description: `${ship.polygon_name}`
+                            description: `Ship entered polygon ${ship.polygon_name}`
                         }],
                         createdAt: currentTimeMs,
                         updatedAt: currentTimeMs
@@ -1483,7 +1483,7 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
                         current: false,
                         user_id: 'admin',
                         acknowledged: false,
-                        description: `${ship.polygon_name}`
+                        description: `Ship exited polygon`
                     });
                     existingNotification.updatedAt = currentTimeMs;
                     await existingNotification.save();
