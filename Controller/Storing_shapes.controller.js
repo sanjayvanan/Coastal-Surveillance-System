@@ -17,7 +17,7 @@ const pool = new Pool({
 // Connection pool for the track server
 const trackPool = new Pool({
     user: 'track_user',
-    host: '192.168.1.100',
+    host: '192.168.1.6',
     database: 'track_processor_v2',
     password: 'zosh',
     port: 5432,
@@ -1425,7 +1425,7 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
                         current: true,
                         user_id: 'admin',
                         acknowledged: false,
-                        description: `Ship entered polygon ${ship.polygon_name}`
+                        description: `${ship.polygon_name}`
                     });
                     existingNotification.updatedAt = currentTimeMs;
                     await existingNotification.save();
@@ -1441,7 +1441,7 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
                             current: true,
                             user_id: 'admin',
                             acknowledged: false,
-                            description: `Ship entered polygon ${ship.polygon_name}`
+                            description: `${ship.polygon_name}`
                         }],
                         createdAt: currentTimeMs,
                         updatedAt: currentTimeMs
@@ -1467,7 +1467,16 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
                     continue;
                 }
 
-                console.log(`Ship exit detected - Ship ID: ${shipId} exited Polygon ID: ${polygonId}`);
+                // Get polygon name from the database
+                const polygonQuery = `
+                    SELECT name 
+                    FROM graphical_objects 
+                    WHERE id = $1;
+                `;
+                const polygonResult = await trackPool.query(polygonQuery, [polygonId]);
+                const polygonName = polygonResult.rows[0]?.name || 'Unknown';
+
+                console.log(`Ship exit detected - Ship ID: ${shipId} exited Polygon ID: ${polygonId} (${polygonName})`);
 
                 const existingNotification = await Notification.findOne({
                     ship_id: shipId,
@@ -1483,7 +1492,7 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
                         current: false,
                         user_id: 'admin',
                         acknowledged: false,
-                        description: `Ship exited polygon`
+                        description: `${polygonName}`
                     });
                     existingNotification.updatedAt = currentTimeMs;
                     await existingNotification.save();
