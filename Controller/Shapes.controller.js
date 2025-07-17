@@ -7,7 +7,7 @@ const wkx = require('wkx');
 // Connect to the PostgreSQL database
 const pool = new Pool({
     user: 'postgres',
-    host: 'localhost',
+    host: '192.168.1.100',
     database: 'postgres',
     password: '12345',
     port: 5432,

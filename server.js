@@ -21,6 +21,22 @@ const app = express();
 const port = 3000;
 const cors = require('cors');
 
+// --- WEBSOCKET SERVER SETUP (ws) ---
+const http = require('http');
+const server = http.createServer(app);
+const WebSocket = require('ws');
+const wss = new WebSocket.Server({ server });
+global.wsClients = [];
+wss.on('connection', function connection(ws) {
+  console.log('WebSocket client connected');
+  global.wsClients.push(ws);
+  ws.on('close', () => {
+    console.log('WebSocket client disconnected');
+    global.wsClients = global.wsClients.filter(client => client !== ws);
+  });
+});
+// --- END WEBSOCKET SERVER SETUP ---
+
 const corsOptions = {
   origin: true,
   credentials: true,
@@ -54,10 +70,13 @@ app.use(cookieParser());
 app.use(cors(corsOptions));
 // MongoDB connection
 //mongodb+srv://zosh:zosh@zoshcpn.q40rq.mongodb.net/  
-mongoose.connect('mongodb+srv://zosh:zosh@zoshcpn.q40rq.mongodb.net/QT_Map', {
+//mongodb+srv://zosh:zosh@zoshcpn.q40rq.mongodb.net/QT_Map
+// 'mongodb+srv://admin:zosh@cluster0.yjlajv9.mongodb.net/map - Atlas DB link
+mongoose.connect('mongodb://localhost:27017/map_local', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
+
 .then(() => console.log('Connected to MongoDB'))
 .catch(err => console.error('MongoDB connection error:', err));
 
@@ -70,9 +89,11 @@ app.use('/api/region-marking/', geoRouter);
 app.use('/api', notificationRoutes);
 app.use('/api/routes', routeRoutes); // Add this line to use the route routes
 
-app.listen(port, () => {
+// --- REPLACE app.listen WITH server.listen ---
+server.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
   console.log(`Swagger documentation available at http://localhost:${port}/api-docs`);
 });
+// --- END ---
 
 

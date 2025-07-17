@@ -380,5 +380,223 @@ const GetUIPosition = async (req, res) => {
     }
 }
 
+const GetLayerMap = async(req, res) => {
+    try{
+        const userId = req.params.userId;
+        if(!userId){
+            return res.status(400).json({
+                success:false,
+                message: 'UserId is required'
+            });
+        }
 
-module.exports = {SaveSettings,SavePreferredLocation,SaveViewportAndTheme,GetViewportAndTheme, GetSettings, SaveUIPosition, GetUIPosition}
+        const settings = await SettingsModel.findOne({ 
+            userId: new mongoose.Types.ObjectId(userId) 
+        });
+
+        res.json({
+            success: true,
+            general: settings.general,
+            CanvasConfig: settings.CanvasConfig,
+            vizLayer: settings.vizSettings,
+            maps: settings.maps,
+            trackConfig: settings.trackConfig
+        });
+        
+
+    } catch(err){
+        console.error('Get Layers and map error:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+            error: err.message
+        });
+    }
+}
+
+//New db savings
+// const UpdateLayerMap = async (req, res) => {
+//     try {
+//         const userId = req.params.userId;
+//         if (!userId) {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: 'UserId is required'
+//             });
+//         }
+        
+//         console.log("Received data in /updateLayerMap:", JSON.stringify(req.body, null, 2));
+
+//         const settings = await SettingsModel.findOne({ 
+//             userId: new mongoose.Types.ObjectId(userId) 
+//         });
+
+//         if (!settings) {
+//             return res.status(404).json({
+//                 success: false,
+//                 message: 'Settings not found for the given user'
+//             });
+//         }
+
+//         if (req.body.CanvasConfig) settings.CanvasConfig = req.body.CanvasConfig;
+//         if (req.body.vizSettings) settings.vizSettings = req.body.vizSettings;
+//         if (req.body.maps) settings.maps = req.body.maps;        
+
+//         settings.updatedAt = new Date();
+//         await settings.save();
+        
+//         res.json({
+//             success: true,
+//             message: 'Settings updated successfully',
+//             settings
+//         });
+
+//     } catch (err) {
+//         console.log("Updating Layers and map error:", err);
+//         res.status(500).json({
+//             success: false,
+//             message: 'Internal Server Error',
+//             error: err.message
+//         });
+//     }
+// };
+
+const UpdateLayerMap = async (req, res) => {
+    try {
+        const userId = req.params.userId;
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                message: 'UserId is required'
+            });
+        }
+
+        console.log("Received data in /updateLayerMap:", JSON.stringify(req.body, null, 2));
+
+        const updateFields = {};
+        if (req.body.CanvasConfig) updateFields.CanvasConfig = req.body.CanvasConfig;
+        if (req.body.vizSettings) updateFields.vizSettings = req.body.vizSettings;
+        if (req.body.maps) updateFields.maps = req.body.maps;
+        updateFields.updatedAt = new Date();
+
+        const settings = await SettingsModel.findOneAndUpdate(
+            { userId: new mongoose.Types.ObjectId(userId) },
+            { $set: updateFields },
+            { new: true }
+        );
+
+        if (!settings) {
+            return res.status(404).json({
+                success: false,
+                message: 'Settings not found for the given user'
+            });
+        }
+
+        res.json({
+            success: true,
+            message: 'Settings updated successfully',
+            settings
+        });
+
+    } catch (err) {
+        console.log("Updating Layers and map error:", err);
+        res.status(500).json({
+            success: false,
+            message: 'Internal Server Error',
+            error: err.message
+        });
+    }
+};
+
+
+const SaveSetting = async (req, res) => {
+    try {
+        const { userId, settings } = req.body;
+        
+        console.log('Received request body:', JSON.stringify(req.body, null, 2));
+
+        if (!userId || !settings) {
+            return res.status(400).json({
+                success: false,
+                message: 'UserId and settings are required'
+            });
+        }
+        
+        console.log("Received data in /SAVESETTINGS:", JSON.stringify(req.body, null, 2));
+
+        const formattedSettings = {
+            trackConfig: {
+                pastDataHours: parseInt(settings.trackConfig.pastDataHours) || 24,
+                dataRefresh: parseInt(settings.trackConfig.dataRefresh) || 5,            
+            },
+            unitConfig: {
+                latlonUnit: settings.unitConfig.latlonUnit || "Deg,Dec,Min",
+                timeZoneUnit: settings.unitConfig.timeZoneUnit || "0.0",
+                distanceUnit: settings.unitConfig.distanceUnit || "DISTANCE_NMI",
+                speedUnit: settings.unitConfig.speedUnit || "SPEED_KTS",
+                windspeedUnit: settings.unitConfig.windspeedUnit || "WSPEED_KTS",
+                tempUnit: settings.unitConfig.tempUnit || "TEMPERATURE_C",
+                depthUnit: settings.unitConfig.depthUnit || "DEPTH_FT"
+            }
+        }
+
+        const updatedSettings = await SettingsModel.findOneAndUpdate(
+            { userId: new mongoose.Types.ObjectId(userId) },
+            { 
+                $set: {
+                    ...formattedSettings,
+                    updatedAt: new Date()
+                }
+            },
+            { upsert: true, new: true }
+        );
+        
+        res.json({
+            success: true,
+            message: 'Settings updated successfully',
+            settings
+        });
+
+
+    } catch (err) {
+        console.log("Save Settings error:", err);
+        res.status(500).json({
+            success: false,
+            message: 'Internal Server Error',
+            error: err.message
+        });
+    }
+}
+
+const GetSetting = async (req, res) => {
+    try{
+        const userId = req.params.userId;
+        if(!userId){
+            return res.status(400).json({
+                success:false,
+                message: 'UserId is required'
+            });
+        }
+
+        const settings = await SettingsModel.findOne({ 
+            userId: new mongoose.Types.ObjectId(userId) 
+        });
+        
+        res.json({
+            success: true,
+            trackConfig: settings.trackConfig,
+            unitConfig: settings.unitConfig
+        });  
+        
+    }
+    catch(err){
+        console.error('Get Settings error:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+            error: err.message
+        });
+    }
+}
+
+module.exports = {SaveSettings,SaveSetting,SavePreferredLocation,SaveViewportAndTheme,GetViewportAndTheme, GetSettings, GetSetting, SaveUIPosition, GetUIPosition, GetLayerMap,UpdateLayerMap}

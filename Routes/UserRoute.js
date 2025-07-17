@@ -18,7 +18,9 @@ router.post('/validateUser', ValidateUser);
 router.post('/signup', signup);
 router.get('/protected', verifyToken, Protect);
 router.get('/users', verifyToken, getUsers);
-router.get('/health',verifyToken,healthCheck);
+router.get('/health', healthCheck);
+
+// router.get('/health',verifyToken,healthCheck);
 router.delete('/users/:userId', verifyToken, DeleteUsers);
 router.post('/updateUsername', verifyToken, UpdateUserName);
 router.post('/updatePassword', verifyToken, UpdatePassword);

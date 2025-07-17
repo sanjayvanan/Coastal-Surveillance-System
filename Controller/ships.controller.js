@@ -4,7 +4,7 @@ const moment = require('moment-timezone');
 // Connect to the PostgreSQL database
 const pool = new Pool({
     user: 'track_user',
-    host: '192.168.1.6',
+    host: '192.168.1.100',
     database: 'track_processor_v2', // Updated database name
     password: 'zosh',
     port: 5432,

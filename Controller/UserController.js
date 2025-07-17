@@ -36,6 +36,7 @@ const ValidateUser = async (req, res) => {
 
         // Compare password with hashed password
         const isPasswordValid = await bcrypt.compare(password, user.password);
+        // const isPasswordValid = password === user.password;
         console.log("Attempting password verification");
         console.log("Input password:", password);
         console.log("Stored hashed password:", user.password);
@@ -86,11 +87,11 @@ const ValidateUser = async (req, res) => {
 
         console.log("\n=== Login Success ===");
         console.log("Token generated successfully");
-        
+
         // Send response with all necessary user information
         res.json({ 
             success: true, 
-            message: 'User validated successfully',
+            message: 'User validated successfullys',
             token: token,
             username: user.username,
             userId: user._id.toString(),
@@ -110,9 +111,79 @@ const ValidateUser = async (req, res) => {
 
 
 // Signup endpoint
+// const signup =  async (req, res) => {
+//     try {
+//         const { username, password } = req.body;
+
+//         // Validate input
+//         if (!username || !password) {
+//             return res.status(400).json({ 
+//                 success: false, 
+//                 message: 'Username and password are required' 
+//             });
+//         }
+
+//         // Check if username exists
+//         const existingUser = await UserModel.findOne({ username });
+//         if (existingUser) {
+//             return res.status(400).json({ 
+//                 success: false, 
+//                 message: 'Username already exists' 
+//             });
+//         } 
+
+//         // Hash password
+//         const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+
+//         // Create new user with hashed password
+//         const newUser = new UserModel({ 
+//             username, 
+//             password: hashedPassword // Store hashed password
+//         });
+//         await newUser.save(); 
+
+//         // Create default settings for the new user
+//         const defaultSettings = new SettingsModel({
+//             userId: newUser._id,
+//             general: {
+//                 pastDataHours: 24,
+//                 dataRefresh: 5,
+//                 theme: 'Dark'
+//             },
+//             pastTrail: {
+//                 hours: 24,
+//                 plotSize: 'Small'
+//             },
+//             tracking: {
+//                 mmsiList: [],  // Add empty MMSI list by default
+//                 trackColor: "#FFFF00"  
+//             }
+//         });
+
+//         await defaultSettings.save();
+
+//         console.log('Created default settings for new user:', {
+//             userId: newUser._id,
+//             settings: defaultSettings
+//         });
+
+//         res.json({ 
+//             success: true, 
+//             message: 'User registered successfully' 
+//         });
+//     } catch (err) {
+//         console.error('Signup error:', err);
+//         res.status(500).json({ 
+//             success: false, 
+//             message: 'Internal server error' 
+//         });
+//     }
+// }
+
 const signup =  async (req, res) => {
     try {
         const { username, password } = req.body;
+        const defaultSettingsObject = require('../config/defaultSettings.json');
 
         // Validate input
         if (!username || !password) {
@@ -144,19 +215,8 @@ const signup =  async (req, res) => {
         // Create default settings for the new user
         const defaultSettings = new SettingsModel({
             userId: newUser._id,
-            general: {
-                pastDataHours: 24,
-                dataRefresh: 5,
-                theme: 'Dark'
-            },
-            pastTrail: {
-                hours: 24,
-                plotSize: 'Small'
-            },
-            tracking: {
-                mmsiList: [],  // Add empty MMSI list by default
-                trackColor: "#FFFF00"  
-            }
+            ...defaultSettingsObject,
+            updatedAt: new Date()
         });
 
         await defaultSettings.save();
@@ -504,6 +564,12 @@ const healthCheck = async(req, res) => {
       timestamp: new Date().toISOString(),
       ack: true
     });
+}
+
+
+const dbcheck = async(req,res) => {
+    
+    
 }
 
 

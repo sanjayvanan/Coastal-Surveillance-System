@@ -30,7 +30,8 @@ const {
     updateSquareById,
     deleteSquareById,
     updateIntrusionDetection,
-    checkShipIntrusion
+    checkShipIntrusion,
+    storeCircleAsPolygon
 } = require('../Controller/Storing_shapes.controller.js')
 const router = express.Router();
 
@@ -930,5 +931,47 @@ router.post('/update-intrusion-detection', updateIntrusionDetection);
  *         description: Server error
  */
 router.post('/check-intrusion', checkShipIntrusion);
+
+/**
+ * @swagger
+ * /api/region-marking/store-circle-as-polygon:
+ *   post:
+ *     summary: Store a circle as a polygon approximation
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - center
+ *               - radius
+ *               - name
+ *             properties:
+ *               center:
+ *                 type: array
+ *                 items:
+ *                   type: number
+ *                 minItems: 2
+ *                 maxItems: 2
+ *                 description: [longitude, latitude]
+ *               radius:
+ *                 type: number
+ *                 description: Radius in meters
+ *               name:
+ *                 type: string
+ *                 description: Name of the circle
+ *               segments:
+ *                 type: integer
+ *                 description: Number of segments for polygon approximation (default 64)
+ *     responses:
+ *       201:
+ *         description: Circle stored as polygon successfully
+ *       400:
+ *         description: Invalid input
+ *       500:
+ *         description: Server error
+ */
+router.post('/store-circle-as-polygon', storeCircleAsPolygon);
 
 module.exports = router;

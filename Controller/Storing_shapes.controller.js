@@ -3,11 +3,37 @@ const { v4: uuidv4 } = require('uuid');
 const wkx = require('wkx');
 const Notification = require('../model/NotificationSchema');
 
+// Helper function to create standardized meta structure
+const createStandardizedMeta = (customMeta = {}) => {
+    const defaultMeta = {
+        type: null, // "point|line|polygon|circle|square|rectangle"
+        isSynthetic: false,
+        color: null,
+        style: {
+            lineStyle: "solid", // "solid|dashed|dotted"
+            fillStyle: "solid", // "solid|transparent|pattern"
+            lineWidth: 2,
+            opacity: 1.0
+        },
+        center: null, // [longitude, latitude] - Only for circles/squares/rectangles
+        radius: null, // Only for circles
+        segments: 64, // Only for circles
+        dimensions: { // Only for squares/rectangles
+            width: null,
+            height: null
+        },
+        description: null,
+        icon: null,
+        properties: {} // Custom user properties (last for extensibility)
+    };
+    
+    return { ...defaultMeta, ...customMeta };
+};
 
 // Connect to the PostgreSQL database
 const pool = new Pool({
     user: 'postgres',
-    host: 'localhost',
+    host: '192.168.1.100',
     database: 'postgres',
     password: '12345',
     port: 5432,
@@ -17,24 +43,32 @@ const pool = new Pool({
 // Connection pool for the track server
 const trackPool = new Pool({
     user: 'track_user',
-    host: '192.168.1.6',
+    host: '192.168.1.100',
     database: 'track_processor_v2',
     password: 'zosh',
     port: 5432,
 });
 
 const enabledPolygons = new Map(); // Store polygon ID -> type mapping
-const INTRUSION_CHECK_INTERVAL = 60000; // 1 minute in milliseconds
+const INTRUSION_CHECK_INTERVAL = 30000; // 30 seconds in milliseconds
 const shipStates = new Map(); // Track ship states: Map<polygonId_shipId, boolean>
 const initialShipStates = new Map(); // Store polygon_id -> Set of ship_ids initially inside
+const polygonNames = new Map();
+
 
 const storePolygon = async (req, res) => {
     try {
-        const { polygonCoords, polygonName } = req.body;
+        const { polygonCoords, polygonName, meta } = req.body;
         
         if (!polygonCoords || !polygonName) {
             return res.status(400).json({ error: 'Polygon coordinates and name are required' });
         }
+
+        // Create standardized meta structure
+        const standardizedMeta = createStandardizedMeta({
+            type: "polygon",
+            ...meta
+        });
 
         // Get the maximum id from the graphical_objects table
         const maxIdQuery = 'SELECT COALESCE(MAX(id), 0) + 1 as next_id FROM graphical_objects';
@@ -43,15 +77,15 @@ const storePolygon = async (req, res) => {
 
         // Store the polygon in the graphical_objects table
         const storePolygonQuery = `
-            INSERT INTO graphical_objects (id, name, type, geometry, unit, created_by, created_at, updated_by, updated_at)
-            VALUES ($1, $2, 'Polygon', ST_GeomFromText($3, 4326), 'meters', $4, EXTRACT(EPOCH FROM NOW())::bigint, $4, EXTRACT(EPOCH FROM NOW())::bigint)
-            RETURNING id, name, type, ST_AsText(geometry) as geometry, unit, created_by, created_at, updated_by, updated_at;
+            INSERT INTO graphical_objects (id, name, type, geometry, unit, created_by, created_at, updated_by, updated_at, meta)
+            VALUES ($1, $2, 'Polygon', ST_GeomFromText($3, 4326), 'meters', $4, EXTRACT(EPOCH FROM NOW())::bigint, $4, EXTRACT(EPOCH FROM NOW())::bigint, $5)
+            RETURNING id, name, type, ST_AsText(geometry) as geometry, unit, created_by, created_at, updated_by, updated_at, meta;
         `;
 
         // Assuming you have a way to get the current user, otherwise use 'admin_user'
         const currentUser = req.user ? req.user.username : 'admin_user';
 
-        const result = await trackPool.query(storePolygonQuery, [nextId, polygonName, polygonCoords, currentUser]);
+        const result = await trackPool.query(storePolygonQuery, [nextId, polygonName, polygonCoords, currentUser, JSON.stringify(standardizedMeta)]);
 
         if (result.rows.length === 0) {
             return res.status(500).json({ error: 'Failed to store polygon' });
@@ -330,7 +364,7 @@ const deletePolygonById = async (req, res) => {
 const getAllGraphicalObjects = async (req, res) => {
     try {
         const query = `
-            SELECT id, name, type, ST_AsText(geometry) as geometry, unit, created_by, created_at, updated_by, updated_at
+            SELECT id, name, type, ST_AsText(geometry) as geometry, unit, created_by, created_at, updated_by, updated_at, meta
             FROM graphical_objects
             ORDER BY id;
         `;
@@ -433,33 +467,40 @@ const storePoints = async (req, res) => {
         const storedPoints = [];
 
         for (const point of points) {
-            const { name, coordinates } = point;
-            
+            const { name, coordinates, meta } = point; // <-- extract meta
+        
             if (!name || !coordinates || coordinates.length !== 2) {
                 return res.status(400).json({ error: 'Each point must have a name and valid coordinates [longitude, latitude]' });
             }
-
+        
+            // Create standardized meta structure
+            const standardizedMeta = createStandardizedMeta({
+                type: "point",
+                ...meta
+            });
+        
             // Get the maximum id from the graphical_objects table
             const maxIdQuery = 'SELECT COALESCE(MAX(id), 0) + 1 as next_id FROM graphical_objects';
             const maxIdResult = await trackPool.query(maxIdQuery);
             const nextId = maxIdResult.rows[0].next_id;
-
-            // Store the point in the graphical_objects table
+        
+            // Store the point in the graphical_objects table, including meta
             const storePointQuery = `
-                INSERT INTO graphical_objects (id, name, type, geometry, unit, created_by, created_at, updated_by, updated_at)
-                VALUES ($1, $2, 'Point', ST_SetSRID(ST_MakePoint($3, $4), 4326), 'meters', $5, EXTRACT(EPOCH FROM NOW())::bigint, $5, EXTRACT(EPOCH FROM NOW())::bigint)
-                RETURNING id, name, type, ST_AsText(geometry) as geometry, unit, created_by, created_at, updated_by, updated_at;
+                INSERT INTO graphical_objects (id, name, type, geometry, unit, created_by, created_at, updated_by, updated_at, meta)
+                VALUES ($1, $2, 'Point', ST_SetSRID(ST_MakePoint($3, $4), 4326), 'meters', $5, EXTRACT(EPOCH FROM NOW())::bigint, $5, EXTRACT(EPOCH FROM NOW())::bigint, $6)
+                RETURNING id, name, type, ST_AsText(geometry) as geometry, unit, created_by, created_at, updated_by, updated_at, meta;
             `;
-
-            // Assuming you have a way to get the current user, otherwise use 'admin_user'
+        
             const currentUser = req.user ? req.user.username : 'admin_user';
-
-            const result = await trackPool.query(storePointQuery, [nextId, name, coordinates[0], coordinates[1], currentUser]);
-
+        
+            const result = await trackPool.query(storePointQuery, [
+                nextId, name, coordinates[0], coordinates[1], currentUser, JSON.stringify(standardizedMeta)
+            ]);
+        
             if (result.rows.length === 0) {
                 return res.status(500).json({ error: 'Failed to store point' });
             }
-
+        
             storedPoints.push(result.rows[0]);
         }
 
@@ -568,7 +609,7 @@ const deleteMultiplePoints = async (req, res) => {
 // Store a line with multiple points
 const storeLine = async (req, res) => {
     try {
-        const { name, coordinates } = req.body;
+        const { name, coordinates, meta } = req.body;
 
         // Validate input
         if (!name || !coordinates || !Array.isArray(coordinates) || coordinates.length < 2) {
@@ -593,6 +634,12 @@ const storeLine = async (req, res) => {
             });
         }
 
+        // Create standardized meta structure
+        const standardizedMeta = createStandardizedMeta({
+            type: "line",
+            ...meta
+        });
+
         // Create LineString WKT
         const lineString = `LINESTRING(${coordinates.map(point => point.join(' ')).join(', ')})`;
 
@@ -612,7 +659,8 @@ const storeLine = async (req, res) => {
                 created_by, 
                 created_at, 
                 updated_by, 
-                updated_at
+                updated_at,
+                meta
             )
             VALUES (
                 $1, 
@@ -623,7 +671,8 @@ const storeLine = async (req, res) => {
                 $4,
                 EXTRACT(EPOCH FROM NOW())::bigint,
                 $4,
-                EXTRACT(EPOCH FROM NOW())::bigint
+                EXTRACT(EPOCH FROM NOW())::bigint,
+                $5
             )
             RETURNING 
                 id, 
@@ -634,11 +683,12 @@ const storeLine = async (req, res) => {
                 created_by,
                 created_at,
                 updated_by,
-                updated_at;
+                updated_at,
+                meta;
         `;
 
         const currentUser = req.user ? req.user.username : 'admin_user';
-        const result = await trackPool.query(query, [nextId, name, lineString, currentUser]);
+        const result = await trackPool.query(query, [nextId, name, lineString, currentUser, JSON.stringify(standardizedMeta)]);
 
         // Calculate line length
         const lengthQuery = `
@@ -1348,7 +1398,81 @@ const deleteSquareById = async (req, res) => {
 // Add this function to convert ISO date to Unix timestamp
 const toUnixTimestamp = (date) => Math.floor(date.getTime() / 1000);
 
-// Modify the checkIntrusionsForAllEnabledPolygons function
+// Add this function near the top (after requires):
+function broadcastIntrusionEvent(eventData) {
+    // Build the message with the required structure
+    const messageObj = {
+        type: 'intrusion',
+        event: eventData.event, // 'entry' or 'exit'
+        shipId: eventData.shipId,
+        polygonId: eventData.polygonId,
+        polygonName: eventData.polygonName,
+        timestamp: eventData.timestamp,
+        alertType: eventData.type, // Use 'alertType' for warning/danger/etc.
+        description: eventData.description
+    };
+    if (eventData.alertId) {
+        messageObj.alertId = eventData.alertId;
+    }
+    const message = JSON.stringify(messageObj);
+    console.log('Broadcasting intrusion event:', message, 'to', global.wsClients ? global.wsClients.length : 0, 'clients');
+    if (global.wsClients) {
+        global.wsClients.forEach(ws => {
+            if (ws.readyState === ws.OPEN) {
+                ws.send(message);
+            }
+        });
+    }
+}
+
+// Function to record initial ships in a polygon
+const recordInitialShipsInPolygon = async (polygonId) => {
+    try {
+        // Convert current time to milliseconds for comparison with sensor_timestamp
+        const currentTimeMs = Date.now();
+        const timeWindowMs = currentTimeMs - (5 * 60 * 1000); // Last 5 minutes in milliseconds
+
+        const query = `
+            WITH recent_ships AS (
+                SELECT DISTINCT ON (uuid) uuid, sensor_timestamp, longitude, latitude
+                FROM track_list
+                WHERE sensor_timestamp >= $2::bigint  -- Compare with millisecond timestamp
+                ORDER BY uuid, sensor_timestamp DESC
+            )
+            SELECT rs.uuid
+            FROM recent_ships rs
+            CROSS JOIN (
+                SELECT geometry 
+                FROM graphical_objects 
+                WHERE id = $1
+            ) go
+            WHERE ST_Contains(
+                go.geometry,
+                ST_SetSRID(ST_MakePoint(rs.longitude, rs.latitude), 4326)
+            )
+        `;
+
+        console.log(`Executing query for polygon ${polygonId} with time window: ${timeWindowMs}`);
+        const result = await trackPool.query(query, [polygonId, timeWindowMs]);
+        
+        const initialShips = new Set(result.rows.map(row => row.uuid));
+        initialShipStates.set(polygonId, initialShips);
+        
+        console.log(`Recorded ${initialShips.size} initial ships in polygon ${polygonId}`);
+        
+        // For newly added polygons, also initialize shipStates for ships currently inside
+        // This prevents immediate exit alerts when the polygon is first enabled
+        initialShips.forEach(shipId => {
+            const stateKey = `${polygonId}_${shipId}`;
+            shipStates.set(stateKey, true);
+        });
+        
+    } catch (err) {
+        console.error(`Error recording initial ships for polygon ${polygonId}:`, err);
+    }
+};
+
+// Main intrusion checking function
 const checkIntrusionsForAllEnabledPolygons = async () => {
     if (enabledPolygons.size === 0) return;
 
@@ -1391,15 +1515,29 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
         `;
 
         const result = await trackPool.query(query, [polygonIds, timeWindowMs]);
-        const currentShipStates = new Set();
+        
+        // Group current ships by polygon
+        const currentShipsByPolygon = new Map();
+        const allCurrentShipStates = new Set();
 
-        // Handle ship entries
+        // Initialize maps for each polygon
+        for (const polygonId of polygonIds) {
+            currentShipsByPolygon.set(polygonId, new Set());
+        }
+
+        // Process current ships and group by polygon
         for (const ship of result.rows) {
-            const stateKey = `${ship.polygon_id}_${ship.uuid}`;
-            currentShipStates.add(stateKey);
+            const polygonId = ship.polygon_id.toString();
+            const stateKey = `${polygonId}_${ship.uuid}`;
+            
+            currentShipsByPolygon.get(polygonId).add(ship.uuid);
+            allCurrentShipStates.add(stateKey);
+
+            // Store polygon name for later use
+            polygonNames.set(polygonId, ship.polygon_name);
 
             // Get initial ships for this polygon
-            const initialShips = initialShipStates.get(ship.polygon_id.toString());
+            const initialShips = initialShipStates.get(polygonId);
             
             // Skip if this ship was initially inside the polygon
             if (initialShips && initialShips.has(ship.uuid)) {
@@ -1408,8 +1546,8 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
 
             // Check if this is a new entry
             if (!shipStates.has(stateKey)) {
-                const polygonType = enabledPolygons.get(ship.polygon_id.toString());
-                console.log(`New ship entry detected - Ship ID: ${ship.uuid} entering Polygon ID: ${ship.polygon_id}`);
+                const polygonType = enabledPolygons.get(polygonId);
+                console.log(`New ship entry detected - Ship ID: ${ship.uuid} entering Polygon ID: ${polygonId}`);
 
                 const existingNotification = await Notification.findOne({
                     ship_id: ship.uuid
@@ -1419,34 +1557,60 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
                     // Add new alert to existing notification
                     existingNotification.alerts.push({
                         type: polygonType,
-                        shape_id: ship.polygon_id.toString(),
+                        shape_id: polygonId,
+                        polygon_name: ship.polygon_name,
                         sensor_timestamp: currentTimeMs,
                         entry_status: 'entered',
                         current: true,
                         user_id: 'admin',
                         acknowledged: false,
-                        description: `${ship.polygon_name}`
+                        description: `Ship entered polygon ${ship.polygon_name}`
                     });
                     existingNotification.updatedAt = currentTimeMs;
                     await existingNotification.save();
+                    // Get the last alert's _id
+                    const alertId = existingNotification.alerts[existingNotification.alerts.length - 1]._id;
+                    broadcastIntrusionEvent({
+                        event: 'entry',
+                        shipId: ship.uuid,
+                        polygonId: polygonId,
+                        polygonName: ship.polygon_name,
+                        timestamp: currentTimeMs,
+                        type: polygonType,
+                        description: `Ship entered polygon ${ship.polygon_name}`,
+                        alertId: alertId
+                    });
                 } else {
                     // Create new notification
                     const newNotification = new Notification({
                         ship_id: ship.uuid,
                         alerts: [{
                             type: polygonType,
-                            shape_id: ship.polygon_id.toString(),
+                            shape_id: polygonId,
+                            polygon_name: ship.polygon_name,
                             sensor_timestamp: currentTimeMs,
                             entry_status: 'entered',
                             current: true,
                             user_id: 'admin',
                             acknowledged: false,
-                            description: `${ship.polygon_name}`
+                            description: `Ship entered polygon ${ship.polygon_name}`
                         }],
                         createdAt: currentTimeMs,
                         updatedAt: currentTimeMs
                     });
                     await newNotification.save();
+                    // Get the last alert's _id
+                    const alertId = newNotification.alerts[newNotification.alerts.length - 1]._id;
+                    broadcastIntrusionEvent({
+                        event: 'entry',
+                        shipId: ship.uuid,
+                        polygonId: polygonId,
+                        polygonName: ship.polygon_name,
+                        timestamp: currentTimeMs,
+                        type: polygonType,
+                        description: `Ship entered polygon ${ship.polygon_name}`,
+                        alertId: alertId
+                    });
                 }
 
                 // Mark the ship as inside the polygon
@@ -1454,9 +1618,9 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
             }
         }
 
-        // Handle ship exits
+        // Handle ship exits - Check each polygon separately
         for (const [stateKey, inPolygon] of shipStates.entries()) {
-            if (!currentShipStates.has(stateKey) && inPolygon) {
+            if (!allCurrentShipStates.has(stateKey) && inPolygon) {
                 const [polygonId, shipId] = stateKey.split('_');
                 
                 // Get initial ships for this polygon
@@ -1467,35 +1631,56 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
                     continue;
                 }
 
-                // Get polygon name from the database
-                const polygonQuery = `
-                    SELECT name 
-                    FROM graphical_objects 
-                    WHERE id = $1;
-                `;
-                const polygonResult = await trackPool.query(polygonQuery, [polygonId]);
-                const polygonName = polygonResult.rows[0]?.name || 'Unknown';
+                const polygonData = enabledPolygons.get(polygonId);
+                
+                // Get polygon name from our stored names or fallback to database query
+                let polygonName = polygonNames.get(polygonId);
+                if (!polygonName) {
+                    try {
+                        const polygonQuery = 'SELECT name FROM graphical_objects WHERE id = $1';
+                        const polygonResult = await trackPool.query(polygonQuery, [polygonId]);
+                        polygonName = polygonResult.rows[0]?.name || '';
+                        // Store it for future use
+                        polygonNames.set(polygonId, polygonName);
+                    } catch (err) {
+                        console.error('Error fetching polygon name:', err);
+                        polygonName = '';
+                    }
+                }
 
                 console.log(`Ship exit detected - Ship ID: ${shipId} exited Polygon ID: ${polygonId} (${polygonName})`);
 
                 const existingNotification = await Notification.findOne({
-                    ship_id: shipId,
-                    'alerts.shape_id': polygonId
+                    ship_id: shipId
                 });
 
                 if (existingNotification) {
+                    // Add exit alert to existing notification
                     existingNotification.alerts.push({
-                        type: enabledPolygons.get(polygonId.toString()),
+                        type: polygonData,
                         shape_id: polygonId,
+                        polygon_name: polygonName,
                         sensor_timestamp: currentTimeMs,
                         entry_status: 'exited',
                         current: false,
                         user_id: 'admin',
                         acknowledged: false,
-                        description: `${polygonName}`
+                        description: `Ship exited polygon ${polygonName}`
                     });
                     existingNotification.updatedAt = currentTimeMs;
                     await existingNotification.save();
+                    // Get the last alert's _id
+                    const alertId = existingNotification.alerts[existingNotification.alerts.length - 1]._id;
+                    broadcastIntrusionEvent({
+                        event: 'exit',
+                        shipId: shipId,
+                        polygonId: polygonId,
+                        polygonName: polygonName,
+                        timestamp: currentTimeMs,
+                        type: polygonData,
+                        description: `Ship exited polygon ${polygonName}`,
+                        alertId: alertId
+                    });
                 }
 
                 // Remove the ship from the shipStates map
@@ -1503,12 +1688,16 @@ const checkIntrusionsForAllEnabledPolygons = async () => {
             }
         }
 
+        // Debug logging
+        console.log(`Current ship states count: ${shipStates.size}`);
+        console.log(`All current ship states count: ${allCurrentShipStates.size}`);
+
     } catch (err) {
         console.error('Error in periodic intrusion check:', err);
     }
 };
 
-// Modify the updateIntrusionDetection function to better handle polygon types
+// Fixed updateIntrusionDetection function
 const updateIntrusionDetection = async (req, res) => {
     try {
         const { polygonIds, polygonTypes } = req.body;
@@ -1525,34 +1714,66 @@ const updateIntrusionDetection = async (req, res) => {
             });
         }
 
-        // Clear existing enabled polygons
-        enabledPolygons.clear();
-        initialShipStates.clear(); // Clear initial states
+        // Get current enabled polygons before update
+        const previouslyEnabledPolygons = new Set(enabledPolygons.keys());
+        const newPolygonIds = new Set(polygonIds.map(id => id.toString()));
         
-        // Update with new polygon IDs and their types
+        // Find polygons to add and remove
+        const polygonsToAdd = new Set([...newPolygonIds].filter(id => !previouslyEnabledPolygons.has(id)));
+        const polygonsToRemove = new Set([...previouslyEnabledPolygons].filter(id => !newPolygonIds.has(id)));
+        
+        console.log('Polygons to add:', Array.from(polygonsToAdd));
+        console.log('Polygons to remove:', Array.from(polygonsToRemove));
+        
+        // Remove polygons that are no longer needed
+        for (const polygonId of polygonsToRemove) {
+            enabledPolygons.delete(polygonId);
+            initialShipStates.delete(polygonId);
+            polygonNames.delete(polygonId);
+            
+            // Remove ship states for this polygon
+            const statesToRemove = [];
+            for (const [stateKey, inPolygon] of shipStates.entries()) {
+                if (stateKey.startsWith(`${polygonId}_`)) {
+                    statesToRemove.push(stateKey);
+                }
+            }
+            statesToRemove.forEach(stateKey => shipStates.delete(stateKey));
+            
+            console.log(`Removed polygon ${polygonId} and its ${statesToRemove.length} ship states`);
+        }
+        
+        // Add or update polygon types for existing polygons
         for (let i = 0; i < polygonIds.length; i++) {
             const polygonId = polygonIds[i].toString();
             const type = polygonTypes?.[i] || 'Warning';
             enabledPolygons.set(polygonId, type);
-
-            // Get initial ships in this polygon
+        }
+        
+        // Only record initial ships for newly added polygons
+        for (const polygonId of polygonsToAdd) {
+            console.log(`Recording initial ships for newly added polygon: ${polygonId}`);
             await recordInitialShipsInPolygon(polygonId);
         }
 
-        // Clear existing interval if it exists
-        if (global.intrusionCheckInterval) {
+        // If this is the first time enabling intrusion detection, start the interval
+        if (!global.intrusionCheckInterval && enabledPolygons.size > 0) {
+            global.intrusionCheckInterval = setInterval(checkIntrusionsForAllEnabledPolygons, INTRUSION_CHECK_INTERVAL);
+            console.log('Started new intrusion check interval');
+        }
+        
+        // If no polygons are enabled, stop the interval
+        if (enabledPolygons.size === 0 && global.intrusionCheckInterval) {
             clearInterval(global.intrusionCheckInterval);
             global.intrusionCheckInterval = null;
+            console.log('Stopped intrusion check interval - no polygons enabled');
         }
-
-        // Create new interval
-        const checkIntrusions = () => checkIntrusionsForAllEnabledPolygons();
-        global.intrusionCheckInterval = setInterval(checkIntrusions, INTRUSION_CHECK_INTERVAL);
-        console.log('Started new intrusion check interval');
 
         res.status(200).json({
             message: 'Intrusion detection settings updated',
-            enabledPolygons: Array.from(enabledPolygons.entries())
+            enabledPolygons: Array.from(enabledPolygons.entries()),
+            addedPolygons: Array.from(polygonsToAdd),
+            removedPolygons: Array.from(polygonsToRemove)
         });
     } catch (err) {
         console.error('Error in updateIntrusionDetection:', err);
@@ -1564,42 +1785,27 @@ const updateIntrusionDetection = async (req, res) => {
     }
 };
 
-// Function to record initial ships in a polygon
-const recordInitialShipsInPolygon = async (polygonId) => {
+// Optional: Add a function to get current status for debugging
+const getIntrusionDetectionStatus = (req, res) => {
     try {
-        // Convert current time to milliseconds for comparison with sensor_timestamp
-        const currentTimeMs = Date.now();
-        const timeWindowMs = currentTimeMs - (5 * 60 * 1000); // Last 5 minutes in milliseconds
-
-        const query = `
-            WITH recent_ships AS (
-                SELECT DISTINCT ON (uuid) uuid, sensor_timestamp, longitude, latitude
-                FROM track_list
-                WHERE sensor_timestamp >= $2::bigint  -- Compare with millisecond timestamp
-                ORDER BY uuid, sensor_timestamp DESC
-            )
-            SELECT rs.uuid
-            FROM recent_ships rs
-            CROSS JOIN (
-                SELECT geometry 
-                FROM graphical_objects 
-                WHERE id = $1
-            ) go
-            WHERE ST_Contains(
-                go.geometry,
-                ST_SetSRID(ST_MakePoint(rs.longitude, rs.latitude), 4326)
-            )
-        `;
-
-        console.log(`Executing query for polygon ${polygonId} with time window: ${timeWindowMs}`);
-        const result = await trackPool.query(query, [polygonId, timeWindowMs]);
+        const status = {
+            enabledPolygons: Array.from(enabledPolygons.entries()),
+            totalShipStates: shipStates.size,
+            initialShipStates: Array.from(initialShipStates.entries()).map(([polygonId, ships]) => ({
+                polygonId,
+                shipCount: ships.size
+            })),
+            intervalRunning: !!global.intrusionCheckInterval,
+            polygonNames: Array.from(polygonNames.entries())
+        };
         
-        const initialShips = new Set(result.rows.map(row => row.uuid));
-        initialShipStates.set(polygonId, initialShips);
-        
-        console.log(`Recorded ${initialShips.size} initial ships in polygon ${polygonId}`);
+        res.status(200).json(status);
     } catch (err) {
-        console.error(`Error recording initial ships for polygon ${polygonId}:`, err);
+        console.error('Error getting intrusion detection status:', err);
+        res.status(500).json({ 
+            error: 'Server Error', 
+            details: err.message 
+        });
     }
 };
 
@@ -1683,6 +1889,133 @@ const checkShipIntrusion = async (req, res) => {
     // }
 };
 
+// Store a circle as a polygon approximation
+const storeCircleAsPolygon = async (req, res) => {
+    try {
+        const { center, radius, name, segments = 64, meta } = req.body;
+        if (!center || !Array.isArray(center) || center.length !== 2 || !radius || !name) {
+            return res.status(400).json({ error: 'center (longitude, latitude), radius, and name are required' });
+        }
+        // Convert radius (meters) to degrees (approximate, valid for small circles)
+        // 1 degree latitude ~ 111320 meters
+        const lat = center[1];
+        const lon = center[0];
+        const earthRadius = 6378137; // meters
+        const coords = [];
+        for (let i = 0; i < segments; i++) {
+            const angle = (2 * Math.PI * i) / segments;
+            // Offset in meters
+            const dx = radius * Math.cos(angle);
+            const dy = radius * Math.sin(angle);
+            // Offset in degrees
+            const dLat = (dy / earthRadius) * (180 / Math.PI);
+            const dLon = (dx / (earthRadius * Math.cos((Math.PI * lat) / 180))) * (180 / Math.PI);
+            coords.push([lon + dLon, lat + dLat]);
+        }
+        // Close the polygon
+        coords.push(coords[0]);
+        const polygonCoords = `POLYGON((${coords.map(pt => pt.join(' ')).join(', ')}))`;
+        
+        // Create standardized meta structure with circle-specific properties
+        const standardizedMeta = createStandardizedMeta({
+            type: "circle",
+            isSynthetic: true,
+            center,
+            radius,
+            segments,
+            ...meta // Allow additional meta properties to be passed
+        });
+        
+        // Get the next ID
+        const maxIdQuery = 'SELECT COALESCE(MAX(id), 0) + 1 as next_id FROM graphical_objects';
+        const maxIdResult = await trackPool.query(maxIdQuery);
+        const nextId = maxIdResult.rows[0].next_id;
+        
+        // Try to insert meta if the column exists, otherwise just return it in the response
+        let result;
+        let metaInserted = false;
+        try {
+            const query = `
+                INSERT INTO graphical_objects (
+                    id,
+                    name,
+                    type,
+                    geometry,
+                    unit,
+                    created_by,
+                    created_at,
+                    updated_by,
+                    updated_at,
+                    meta
+                )
+                VALUES (
+                    $1,
+                    $2,
+                    'Polygon',
+                    ST_GeomFromText($3, 4326),
+                    'meters',
+                    $4,
+                    EXTRACT(EPOCH FROM NOW())::bigint,
+                    $4,
+                    EXTRACT(EPOCH FROM NOW())::bigint,
+                    $5::jsonb
+                )
+                RETURNING id, name, type, ST_AsText(geometry) as geometry, unit, created_by, created_at, updated_by, updated_at, meta;
+            `;
+            const currentUser = req.user ? req.user.username : 'admin_user';
+            result = await trackPool.query(query, [nextId, name, polygonCoords, currentUser, JSON.stringify(standardizedMeta)]);
+            metaInserted = true;
+        } catch (err) {
+            // If meta column does not exist, fallback to insert without meta
+            if (err.message && err.message.includes('column "meta"')) {
+                const query = `
+                    INSERT INTO graphical_objects (
+                        id,
+                        name,
+                        type,
+                        geometry,
+                        unit,
+                        created_by,
+                        created_at,
+                        updated_by,
+                        updated_at
+                    )
+                    VALUES (
+                        $1,
+                        $2,
+                        'Polygon',
+                        ST_GeomFromText($3, 4326),
+                        'meters',
+                        $4,
+                        EXTRACT(EPOCH FROM NOW())::bigint,
+                        $4,
+                        EXTRACT(EPOCH FROM NOW())::bigint
+                    )
+                    RETURNING id, name, type, ST_AsText(geometry) as geometry, unit, created_by, created_at, updated_by, updated_at;
+                `;
+                const currentUser = req.user ? req.user.username : 'admin_user';
+                result = await trackPool.query(query, [nextId, name, polygonCoords, currentUser]);
+            } else {
+                throw err;
+            }
+        }
+        if (!result || result.rows.length === 0) {
+            return res.status(500).json({ error: 'Failed to store circle as polygon' });
+        }
+        const response = {
+            message: 'Circle stored as polygon successfully',
+            polygon: {
+                ...result.rows[0],
+                meta: metaInserted ? result.rows[0].meta : standardizedMeta
+            }
+        };
+        res.status(201).json(response);
+    } catch (err) {
+        console.error('Error storing circle as polygon:', err);
+        res.status(500).json({ error: 'Server Error', details: err.message });
+    }
+};
+
 module.exports = { 
     storePolygon, 
     getShipsWithinPolygon, 
@@ -1713,7 +2046,12 @@ module.exports = {
     updateSquareById,
     deleteSquareById,
     updateIntrusionDetection,
-    checkShipIntrusion
+    getIntrusionDetectionStatus,
+    checkShipIntrusion,
+    checkIntrusionsForAllEnabledPolygons,
+    recordInitialShipsInPolygon,
+    broadcastIntrusionEvent,
+    storeCircleAsPolygon
 };
 
 

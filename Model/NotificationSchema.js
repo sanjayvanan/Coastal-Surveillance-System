@@ -5,6 +5,7 @@ const alertSchema = new mongoose.Schema({
     type: { type: String, required: true },
     sensor_timestamp: { type: Number, required: true },
     shape_id: { type: String, required: true },
+    polygon_name: { type: String, required: true,default:'noneDude' },
     entry_status: { type: String, required: true },
     current: { type: Boolean, default: false },
     user_id: { type: String, required: true, default: 'admin' },

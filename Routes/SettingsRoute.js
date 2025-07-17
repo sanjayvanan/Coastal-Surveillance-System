@@ -1,5 +1,5 @@
 const express = require('express')
-const {SaveSettings,SavePreferredLocation,SaveViewportAndTheme, GetViewportAndTheme, GetSettings,SaveUIPosition, GetUIPosition} = require('../Controller/SettingsController')
+const {SaveSettings,SaveSetting,SavePreferredLocation,SaveViewportAndTheme, GetViewportAndTheme, GetSettings,GetSetting,SaveUIPosition, GetUIPosition,GetLayerMap,UpdateLayerMap} = require('../Controller/SettingsController')
 const jwt = require('jsonwebtoken');
 const { verifyToken, SECRET_KEY } = require('../middleware/auth');
 
@@ -35,5 +35,11 @@ router.get('/getViewportAndTheme/:userId',verifyToken, GetViewportAndTheme)
 router.get('/getSettings/:userId', verifyToken, GetSettings)
 router.get('/saveUIPosition', verifyToken, SaveUIPosition)
 router.get('/getUIPosition/:userId', verifyToken, GetUIPosition)
+router.get('/getLayerMap/:userId',verifyToken, GetLayerMap)
+router.put('/updateLayerMap/:userId',verifyToken, UpdateLayerMap)
+
+router.put('/saveSetting', verifyToken, SaveSetting)
+router.get('/getSetting/:userId', verifyToken, GetSetting)
+
 
 module.exports = router
