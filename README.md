@@ -1,45 +1,108 @@
-**Edit a file, create a new file, and clone from Bitbucket in under 2 minutes**
+# Coastal Surveillance System Backend
 
-When you're done, you can delete the content in this README and update the file with details for others getting started with your repository.
+## Overview
+This is the backend server for the Coastal Surveillance System, designed to manage ship tracking, geographical shapes, user authentication, notifications, and more. It provides a RESTful API for interacting with ship data, geographical objects (polygons, circles, lines, points), and system settings. The backend is built with Node.js, Express, MongoDB, and PostgreSQL, and supports real-time notifications via WebSockets.
 
-*We recommend that you open this README in another tab as you perform the tasks below. You can [watch our video](https://youtu.be/0ocf7u76WSo) for a full demo of all the steps in this tutorial. Open the video in a new tab to avoid leaving Bitbucket.*
+## Features
+- Ship tracking and history
+- Geographical object management (polygons, circles, lines, points, squares)
+- Intrusion detection and real-time alerts
+- User authentication and settings
+- Watchlist management
+- Notification system
+- Swagger API documentation
 
----
+## Setup Instructions
 
-## Edit a file
+### Prerequisites
+- Node.js (v14+ recommended)
+- npm
+- MongoDB instance
+- PostgreSQL instance
 
-You’ll start by editing this README file to learn how to edit a file in Bitbucket.
+### Installation
+1. **Clone the repository:**
+   ```bash
+   git clone <repo-url>
+   cd Coastal-Surveillace-System
+   ```
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+3. **Configure environment variables:**
+   Create a `.env` file in the project root with the following content (adjust as needed):
+   ```env
+   PORT=3000
+   MONGO_URI=mongodb: your mongo URI
+   POSTGRES_HOST= localhost(your address)
+   POSTGRES_PORT=5432
+   POSTGRES_USER=track_user
+   POSTGRES_PASSWORD=zosh
+   POSTGRES_DB=track_processor_v2
+   POSTGRES_USER_ADMIN=postgres
+   POSTGRES_PASSWORD_ADMIN=12345
+   POSTGRES_DB_ADMIN=postgres
+   ```
+4. **Start the server:**
+   ```bash
+   npm run dev
+   # or
+   node server.js
+   ```
 
-1. Click **Source** on the left side.
-2. Click the README.md link from the list of files.
-3. Click the **Edit** button.
-4. Delete the following text: *Delete this line to make a change to the README from Bitbucket.*
-5. After making your change, click **Commit** and then **Commit** again in the dialog. The commit page will open and you’ll see the change you just made.
-6. Go back to the **Source** page.
+## API Documentation
+Swagger UI is available at: [http://localhost:3000/api-docs](http://localhost:3000/api-docs)
 
----
+## Main API Endpoints & Functions
 
-## Create a file
+### Ship Management
+- `getAll` — Get all ship data (with pagination)
+- `Get_using_MMSI` — Get ship by MMSI
+- `Get_track_replay` — Get ship track replay
+- `Get_using_UUID` — Get ship by UUID
+- `getBoth_MMSI_ISO` — Get ship by both MMSI and IMO
+- `GetIMO` — Get ship by IMO
+- `get_By_name` — Get ship by name
+- `getByCallSign` — Get ship by call sign
+- `fetchByTime` — Get ships by time range
+- `getShipTrackHistory` — Get ship track history (with optional simplification)
+- `getAllMessageTypes` — Get all message types
+- `getAllTrackTypes` — Get all track types
+- `getAllTrackNavStatuses` — Get all navigation statuses
+- `trackList` — Get recent track list
+- `checkShipIntrusion` — Check if a ship is intruding a polygon
 
-Next, you’ll add a new file to this repository.
+### Geographical Shapes Management
+- `storePolygon`, `getPolygonById`, `updatePolygonById`, `deletePolygonById`, `getAllPolygons`
+- `storeCircleAsPolygon`, `getAllCircles`
+- `storeLine`, `getLineById`, `updateLineById`, `deleteLineById`, `getAllLines`, `getShipsAlongLine`, `getShipsCrossingLine`, `deleteMultipleLines`
+- `storePoints`, `getAllPoints`, `updatePointById`, `deletePointById`, `deleteMultiplePoints`
+- `storeSquare`, `getSquareById`, `updateSquareById`, `deleteSquareById`
+- `getAllGraphicalObjects`
 
-1. Click the **New file** button at the top of the **Source** page.
-2. Give the file a filename of **contributors.txt**.
-3. Enter your name in the empty file space.
-4. Click **Commit** and then **Commit** again in the dialog.
-5. Go back to the **Source** page.
+### Intrusion Detection & Notifications
+- `updateIntrusionDetection` — Enable/disable polygons for intrusion detection
+- `getIntrusionDetectionStatus` — Get current intrusion detection status
+- `checkIntrusionsForAllEnabledPolygons` — Periodic check for intrusions
+- `recordInitialShipsInPolygon` — Record ships present at the time of enabling detection
+- `broadcastIntrusionEvent` — Send real-time intrusion events via WebSocket
 
-Before you move on, go ahead and explore the repository. You've already seen the **Source** page, but check out the **Commits**, **Branches**, and **Settings** pages.
+### User & Settings
+- User management and authentication via `/Routes/UserRoute`
+- Settings management via `/Routes/SettingsRoute`
+- Watchlist management via `/Routes/WatchlistRoute`
 
----
+### Notification System
+- Notification management via `/routes/notificationRoutes`
 
-## Clone a repository
+## Real-Time Features
+- WebSocket server for broadcasting intrusion and alert events to connected clients.
 
-Use these steps to clone from SourceTree, our client for using the repository command-line free. Cloning allows you to work on your files locally. If you don't yet have SourceTree, [download and install first](https://www.sourcetreeapp.com/). If you prefer to clone from the command line, see [Clone a repository](https://confluence.atlassian.com/x/4whODQ).
+## Development Notes
+- Ensure MongoDB and PostgreSQL are running and accessible with the credentials in your `.env` file.
+- For production, use strong passwords and secure your environment variables.
+- The application uses both MongoDB (for users, notifications, settings) and PostgreSQL (for ship and geo data).
 
-1. You’ll see the clone button under the **Source** heading. Click that button.
-2. Now click **Check out in SourceTree**. You may need to create a SourceTree account or log in.
-3. When you see the **Clone New** dialog in SourceTree, update the destination path and name if you’d like to and then click **Clone**.
-4. Open the directory you just created to see your repository’s files.
-
-Now that you're more familiar with your Bitbucket repository, go ahead and add a new file locally. You can [push your change back to Bitbucket with SourceTree](https://confluence.atlassian.com/x/iqyBMg), or you can [add, commit,](https://confluence.atlassian.com/x/8QhODQ) and [push from the command line](https://confluence.atlassian.com/x/NQ0zDQ).
+## License
+This project is for internal use. Contact the maintainers for licensing information.
