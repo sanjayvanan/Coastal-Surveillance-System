@@ -1,13 +1,14 @@
+require('dotenv').config();
 const { Pool } = require('pg');
 const moment = require('moment-timezone');
 
 // Connect to the PostgreSQL database
 const pool = new Pool({
-    user: 'track_user',
-    host: '192.168.1.100',
-    database: 'track_processor_v2', // Updated database name
-    password: 'zosh',
-    port: 5432,
+    user: process.env.POSTGRES_USER,
+    host: process.env.POSTGRES_HOST,
+    database: process.env.POSTGRES_DB,
+    password: process.env.POSTGRES_PASSWORD,
+    port: process.env.POSTGRES_PORT,
 });
 
 // Add this at the top of the file to track ship states

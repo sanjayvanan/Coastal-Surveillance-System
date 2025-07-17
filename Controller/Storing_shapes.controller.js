@@ -1,3 +1,4 @@
+require('dotenv').config();
 const { Pool } = require('pg');
 const { v4: uuidv4 } = require('uuid');
 const wkx = require('wkx');
@@ -32,21 +33,21 @@ const createStandardizedMeta = (customMeta = {}) => {
 
 // Connect to the PostgreSQL database
 const pool = new Pool({
-    user: 'postgres',
-    host: '192.168.1.100',
-    database: 'postgres',
-    password: '12345',
-    port: 5432,
+    user: process.env.POSTGRES_USER_ADMIN,
+    host: process.env.POSTGRES_HOST,
+    database: process.env.POSTGRES_DB_ADMIN,
+    password: process.env.POSTGRES_PASSWORD_ADMIN,
+    port: process.env.POSTGRES_PORT,
 });
 
 
 // Connection pool for the track server
 const trackPool = new Pool({
-    user: 'track_user',
-    host: '192.168.1.100',
-    database: 'track_processor_v2',
-    password: 'zosh',
-    port: 5432,
+    user: process.env.POSTGRES_USER,
+    host: process.env.POSTGRES_HOST,
+    database: process.env.POSTGRES_DB,
+    password: process.env.POSTGRES_PASSWORD,
+    port: process.env.POSTGRES_PORT,
 });
 
 const enabledPolygons = new Map(); // Store polygon ID -> type mapping

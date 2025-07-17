@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
@@ -18,7 +19,7 @@ const cookieParser = require('cookie-parser');
 const { verifyToken, SECRET_KEY } = require('./middleware/auth');
 const routeRoutes = require('./Routes/RouteRoutes'); 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 const cors = require('cors');
 
 // --- WEBSOCKET SERVER SETUP (ws) ---
@@ -72,7 +73,7 @@ app.use(cors(corsOptions));
 //mongodb+srv://zosh:zosh@zoshcpn.q40rq.mongodb.net/  
 //mongodb+srv://zosh:zosh@zoshcpn.q40rq.mongodb.net/QT_Map
 // 'mongodb+srv://admin:zosh@cluster0.yjlajv9.mongodb.net/map - Atlas DB link
-mongoose.connect('mongodb://localhost:27017/map_local', {
+mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
