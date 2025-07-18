@@ -104,5 +104,47 @@ Swagger UI is available at: [http://localhost:3000/api-docs](http://localhost:30
 - For production, use strong passwords and secure your environment variables.
 - The application uses both MongoDB (for users, notifications, settings) and PostgreSQL (for ship and geo data).
 
+
+## 📸 Screenshots
+
+### ✅ Fetch All Graphical Objects
+
+This screenshot demonstrates a Postman request to fetch all graphical objects.
+
+![Fetch All Graphical Objects - Postman Example](https://github.com/user-attachments/assets/2a74b224-ff0a-459d-bdeb-8095ef5a7bd9)
+
+---
+
+### 📍 Fetch Ships Within Polygon
+
+This screenshot shows the result of a query that fetches ships within a defined polygon area.
+
+![Fetch Ships Within Polygon](https://github.com/user-attachments/assets/33d2194b-6490-4409-87be-782f2649f7cd)
+
+---
+
+### 🕒 Track List Within Time Frame
+
+This screenshot displays the track list and detailed ship information (such as MMSI, speed, heading, and timestamps) filtered by a specific time frame.
+
+![Track List and Ship Details - Time Filtered](https://github.com/user-attachments/assets/2cdee616-8e93-44bf-a135-52086d571e2f)
+
+---
+
+### 📈 Track History of a Specific Ship
+
+This screenshot shows the complete historical movement of a selected ship over time, visualized on the map. It helps in analyzing the route and behavioral patterns of the vessel.
+
+![Track History of Selected Ship](https://github.com/user-attachments/assets/7d58ce1f-ac00-42d7-89ba-0313ab904798)
+
+---
+
+### 🧾 Swagger UI – API Documentation
+
+This screenshot presents the Swagger UI interface, which provides interactive API documentation. It allows developers to test endpoints, view request/response models, and understand available routes.
+
+![Swagger UI - API Documentation](https://github.com/user-attachments/assets/c539b0ea-35e2-4657-a3e8-c682476d816a)
+
+
 ## License
 This project is for internal use. Contact the maintainers for licensing information.
