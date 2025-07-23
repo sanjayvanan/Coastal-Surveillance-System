@@ -113,7 +113,7 @@ const getShipsWithinPolygon = async (req, res) => {
             return res.status(400).json({ error: 'Polygon coordinates are required' });
         }
 
-        const hours = parseInt(req.query.hours) || 24;
+        const hours = parseInt(req.query.hours) || 2400;
         const hoursAgo = Date.now() - (hours * 60 * 60 * 1000);
 
         // Retrieve the polygon name based on the coordinates
@@ -125,13 +125,23 @@ const getShipsWithinPolygon = async (req, res) => {
         const polygonNameResult = await trackPool.query(polygonNameQuery, [polygonCoords]);
         const polygonName = polygonNameResult.rows.length > 0 ? polygonNameResult.rows[0].name : 'Unknown Polygon';
 
-        // Query to get all relevant ship details
+        // Query to get all relevant ship details along with human-readable nav_status
         const shipsQuery = `
-            SELECT DISTINCT tl.mmsi, tl.track_name, tl.latitude, tl.longitude, 
-                            tl.height_depth, tl.speed_over_ground, 
-                            tl.course_over_ground, tl.true_heading, 
-                            tl.rate_of_turn, tl.sensor_timestamp
+            SELECT DISTINCT 
+                tl.mmsi, 
+                tl.track_name, 
+                tl.latitude, 
+                tl.longitude, 
+                tl.height_depth, 
+                tl.speed_over_ground, 
+                tl.course_over_ground, 
+                tl.true_heading, 
+                ts.nav_status AS track_nav_status, 
+                tl.rate_of_turn, 
+                tl.sensor_timestamp
             FROM track_list tl
+            LEFT JOIN track_nav_status ts 
+                ON tl.track_nav_status__id = ts.id
             WHERE ST_Contains(
                 ST_GeomFromText($1, 4326),
                 ST_SetSRID(ST_MakePoint(tl.longitude, tl.latitude), 4326)
@@ -140,10 +150,11 @@ const getShipsWithinPolygon = async (req, res) => {
         `;
 
         const shipsResult = await trackPool.query(shipsQuery, [polygonCoords, hoursAgo]);
+
         res.status(200).json({
             message: 'Ships within polygon retrieved successfully',
             timeWindow: `Last ${hours} hours`,
-            polygonName: polygonName, // Include the polygon name
+            polygonName: polygonName,
             ships: shipsResult.rows.map(ship => ({
                 mmsi: ship.mmsi,
                 track_name: ship.track_name,
@@ -153,15 +164,18 @@ const getShipsWithinPolygon = async (req, res) => {
                 speed_over_ground: ship.speed_over_ground,
                 course_over_ground: ship.course_over_ground,
                 true_heading: ship.true_heading,
+                track_nav_status: ship.track_nav_status, // human-readable status
                 rate_of_turn: ship.rate_of_turn,
-                sensor_timestamp: ship.sensor_timestamp // Include timestamp
+                sensor_timestamp: ship.sensor_timestamp
             }))
         });
+
     } catch (err) {
         console.error('Error retrieving ships within polygon:', err);
         res.status(500).json({ error: 'Server Error', details: err.message });
     }
 };
+
 
 //get the ships within a circle
 
@@ -2054,17 +2068,3 @@ module.exports = {
     broadcastIntrusionEvent,
     storeCircleAsPolygon
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
